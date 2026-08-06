@@ -106,7 +106,7 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
       return;
     }
 
-    const fence = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
+    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
     if (fence?.[1]) {
       const character = fence[1][0] as "`" | "~";
       if (!fenceCharacter) {
@@ -125,8 +125,8 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
       return;
     }
 
-    const htmlStart = /^\s{0,3}<\/?([A-Za-z][A-Za-z0-9-]*)/.exec(line);
-    if (/^\s{0,3}<!--/.test(line)) {
+    const htmlStart = /^ {0,3}<\/?([A-Za-z][A-Za-z0-9-]*)/.exec(line);
+    if (/^ {0,3}<!--/.test(line)) {
       if (!line.includes("-->")) htmlBlock = "comment";
       setextCandidate = null;
       return;
@@ -145,7 +145,7 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
       }
     }
 
-    const atx = /^(\s{0,3})(#{1,6})(?:[\t ]+(.*?))?\s*$/.exec(line);
+    const atx = /^( {0,3})(#{1,6})(?:[\t ]+(.*?))?\s*$/.exec(line);
     if (atx) {
       const rawTitle = stripClosingSequence(atx[3] ?? "");
       headings.push({
@@ -162,7 +162,7 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
     }
 
     // A Setext underline turns the preceding paragraph line into a heading.
-    const underline = /^\s{0,3}(=+|-+)\s*$/.exec(line);
+    const underline = /^ {0,3}(=+|-+)\s*$/.exec(line);
     if (underline && setextCandidate !== null) {
       const titleLine = lines[setextCandidate]!;
       const rawTitle = titleLine.trim();
@@ -172,7 +172,7 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
         style: "setext",
         level: underline[1]!.startsWith("=") ? 1 : 2,
         title: stripBloomMetadata(rawTitle),
-        indent: /^(\s{0,3})/.exec(titleLine)![1]!,
+        indent: /^( {0,3})/.exec(titleLine)![1]!,
         persistedId: extractBloomId(rawTitle),
       });
       setextCandidate = null;
@@ -180,7 +180,7 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
     }
 
     // Blank lines, block quotes and list markers cannot become a Setext title.
-    setextCandidate = trimmed === "" || /^\s{0,3}(>|[-*+]\s|\d+[.)]\s)/.test(line) ? null : index;
+    setextCandidate = trimmed === "" || /^ {0,3}(>|[-*+]\s|\d+[.)]\s)/.test(line) ? null : index;
   });
 
   return headings;
@@ -242,7 +242,10 @@ export function ensureHeadingIds(markdown: string): { markdown: string; changed:
     let id = generateNodeId();
     while (seen.has(id)) id = generateNodeId();
     seen.add(id);
-    lines[heading.line] = `${lines[heading.line]!.trimEnd()} <!-- bloommd:id=${id} -->`;
+    // Existing id comments are replaced rather than appended. A heading duplicated in the editor
+    // carries a stale id, and appending would grow the line by one comment on every single open.
+    const withoutIds = lines[heading.line]!.replace(/\s*<!--\s*bloommd:id=[\s\S]*?-->/gi, "");
+    lines[heading.line] = `${withoutIds.trimEnd()} <!-- bloommd:id=${id} -->`;
     changed = true;
   });
 

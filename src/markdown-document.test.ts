@@ -215,3 +215,30 @@ describe("CommonMark parity with the BloomMD core parser", () => {
     expect(parseHeadingTree("- item\n- item\n")).toHaveLength(0);
   });
 });
+
+describe("id stability in real vaults", () => {
+  test("replaces a duplicated id instead of appending a second comment", () => {
+    let note = "# Root <!-- bloommd:id=dup -->\n\n## A <!-- bloommd:id=dup -->\n";
+    for (let pass = 0; pass < 3; pass += 1) note = ensureHeadingIds(note).markdown;
+    const line = note.split("\n").find((value) => value.startsWith("## A"))!;
+    expect(line.match(/bloommd:id=/g)).toHaveLength(1);
+    expect(ensureHeadingIds(note).changed).toBe(false);
+  });
+
+  test("keeps ids unique after a heading is duplicated in the editor", () => {
+    const note = ensureHeadingIds("# Root <!-- bloommd:id=dup -->\n\n## A <!-- bloommd:id=dup -->\n").markdown;
+    const ids = flattenHeadings(parseHeadingTree(note)).map((node) => node.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("ignores tab-indented headings, which are indented code", () => {
+    const tree = parseHeadingTree("# Root\n\n\t## not a heading\n\n## Real\n");
+    expect(flattenHeadings(tree).map((node) => node.title)).toEqual(["Root", "Real"]);
+  });
+
+  test("preserves CRLF line endings", () => {
+    const result = ensureHeadingIds("# Root\r\n\r\n## A\r\n").markdown;
+    expect(result).toContain("\r\n");
+    expect(result).not.toMatch(/[^\r]\n/);
+  });
+});

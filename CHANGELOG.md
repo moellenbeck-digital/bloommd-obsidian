@@ -9,6 +9,10 @@
 - Drop the optional ATX closing sequence from titles (`## Title ##`) while keeping a trailing hash
   that has no preceding space (`## Title#`).
 - Keep empty ATX headings visible as nodes.
+- Replace an existing node id instead of appending a second one. A heading duplicated in the editor
+  used to gain one more `bloommd:id` comment on every single open, growing the line without bound.
+- Treat tab-indented lines as indented code, matching CommonMark, so `\t## text` is no longer read
+  as a heading and no longer receives an id comment.
 - Remove the last hard desktop dependency: the optional file handoff is now guarded by
   `Platform.isDesktop` and falls back to the web target everywhere else. The manifest stays
   `isDesktopOnly` until the mobile device test matrix has been executed.
