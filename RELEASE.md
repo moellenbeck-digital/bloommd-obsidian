@@ -4,15 +4,16 @@ Obsidian expects `manifest.json`, `README.md`, and the license at the root of a 
 
 ## Repository topology
 
-Publish `plugins/obsidian` as the root of a dedicated public repository such as `bloommd-obsidian`. The nested `.github/workflows/release.yml` becomes active when this directory is used as that repository root.
+The plugin ships from the public repository `bloommd-app/bloommd-obsidian`, whose root is a mirror of `plugins/obsidian` in the private BloomMD monorepo. The nested `.github/workflows/release.yml` is active there.
 
-From the BloomMD monorepo, a deterministic branch can be prepared with:
+From the BloomMD monorepo, mirror the plugin into a checkout of the public repository:
 
 ```bash
-git subtree split --prefix plugins/obsidian -b obsidian-release
+scripts/sync-obsidian-repo.sh ../bloommd-obsidian
 ```
 
-Review the branch before pushing it to the public plugin repository. Never copy test vaults or private Markdown files.
+The script excludes `node_modules/`, `release/` and build scratch, and never copies test vaults or
+private Markdown. Review the diff in the public checkout before committing and tagging.
 
 ## Release checklist
 

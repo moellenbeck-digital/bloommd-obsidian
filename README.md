@@ -1,74 +1,75 @@
 # BloomMD for Obsidian
 
-Visualize your Markdown notes as interactive mind maps while keeping Markdown as the source of truth.
+**Turn any note into an editable mind map — without a second file format.**
 
-BloomMD for Obsidian is a lightweight local companion plugin. It visualizes and edits the active note while the Markdown file in the vault remains the source of truth.
+Most mind map plugins render your note into a separate view, or store the map in their own file. BloomMD edits the note itself. Drag a branch and the heading hierarchy in your Markdown changes. Close the plugin and you are left with a normal `.md` file that still works in Obsidian, Git, and any text editor.
 
-## Mind Map View
+<!-- Add a real screen recording here before the public beta announcement. -->
 
-The plugin uses the same React Flow canvas engine as BloomMD surfaces. It supports cursor-centered zoom, free canvas panning, a minimap, Fit View, search, focus controls, branch collapsing, and persisted local layouts.
+## What it does
+
+**Your headings are the map.** `#` becomes the root, `##` its children, and the text under each heading stays as that node's content. Nothing is duplicated and nothing is generated on the side.
+
+**Structure edits go back into the note.** Reparent a branch, add a sibling, rename a node, delete a subtree — each confirmed action rewrites the same file through the Obsidian Vault API. Frontmatter, unrelated sections, and the rest of your formatting stay exactly as they were.
+
+**Whole folders, not just one note.** `Visualize current folder` maps a folder and its notes as one canvas, so you can see how a project hangs together instead of opening files one at a time.
+
+**Your links become edges.** External links, `[[wiki links]]`, and linked mentions are visible on the canvas and openable from the inspector.
+
+**Layout stays out of your Markdown.** Node positions, viewport, and collapsed branches live in `.obsidian/plugins/bloommd/data.json`. Your note never accumulates layout noise.
 
 ## Editing
 
-- Drag the empty canvas to pan and use the wheel or trackpad to zoom around the cursor.
-- Drag a node body to position it freely without changing Markdown hierarchy.
-- Hold `Shift` to select multiple nodes and drag the selection together.
-- Copy selected branches with `Cmd/Ctrl+C`, select a destination, and paste them as children with `Cmd/Ctrl+V`.
-- Drag the orange connection handle from a parent to another node to reparent that branch.
-- Double-click a node or press `F2` to rename it inline.
-- Open the inspector to edit Markdown content with local autosave and conflict detection.
-- Add child or sibling nodes from the node toolbar or with `Tab` and `Enter`.
-- Delete a complete branch after confirmation.
-- Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` for conflict-protected undo and redo.
-- Open external links, Obsidian wiki links, and linked mentions from the inspector.
-- Switch quickly between Markdown notes from the canvas toolbar.
+| Action | How |
+|---|---|
+| Pan / zoom | Drag empty canvas · wheel or trackpad zooms at the cursor |
+| Move a node visually | Drag the node body (does not change hierarchy) |
+| Reparent a branch | Drag the orange handle from a parent onto another node |
+| Rename | Double-click or `F2` |
+| Add child / sibling | Node toolbar, or `Tab` / `Enter` |
+| Multi-select | Hold `Shift`, then drag the selection together |
+| Copy / paste a branch | `Cmd/Ctrl+C` → select destination → `Cmd/Ctrl+V` |
+| Undo / redo | `Cmd/Ctrl+Z` · `Cmd/Ctrl+Shift+Z` (conflict-protected) |
+| Edit content | Open the inspector — autosaves, detects external edits |
 
-Every confirmed action updates the same local Markdown file through the Obsidian Vault API. Frontmatter and unrelated sections remain untouched, and headings inside fenced code blocks are ignored. BloomMD adds standard HTML comments to headings as stable local node IDs; visual positions, viewport, and collapsed branches are stored only in the plugin's local data file.
+## What BloomMD does to your files
+
+This is the part worth reading before you install anything into a real vault.
+
+- **It writes to the note you are viewing.** That is the point of the plugin, but it means it is not read-only. Try it on a copy first if your vault is precious.
+- **It adds one HTML comment per heading** — `## Goal <!-- bloommd:id=a1b2c3 -->`. These are valid Markdown comments, invisible in preview, and give nodes a stable identity so links and layouts survive edits. Delete them and nothing breaks; BloomMD just generates new ones.
+- **It leaves everything else alone.** Frontmatter, code blocks, HTML blocks, and text outside headings are untouched. Headings inside fenced code and HTML blocks are correctly ignored — they are not turned into nodes and never receive an ID comment.
+- **It never uploads anything.** No telemetry, no vault contents, no file names, no Markdown in URL parameters. Everything runs locally against the Vault API.
+
+## Install
+
+### Beta via BRAT (recommended)
+
+1. Install the **Obsidian42 - BRAT** community plugin.
+2. In BRAT: *Add Beta Plugin* → `bloommd-app/bloommd-obsidian`
+3. Enable **BloomMD for Obsidian** under Community Plugins.
+
+BRAT keeps the plugin updated as new beta releases are tagged.
+
+### Manual
+
+1. Download `manifest.json`, `main.js`, and `styles.css` from the [latest release](https://github.com/bloommd-app/bloommd-obsidian/releases/latest).
+2. Copy them into `<vault>/.obsidian/plugins/bloommd/`.
+3. Enable Community Plugins, then enable BloomMD.
+
+> **Desktop only for now.** The plugin has no hard desktop dependency left, but mobile is not enabled until the iOS and Android touch matrix has been tested on real devices. Supported: macOS, Windows, Linux.
 
 ## Commands
 
-- `BloomMD: Visualize current note`
-- `BloomMD: Open current note in BloomMD`
+- `BloomMD: Visualize current note` — also on the ribbon
 - `BloomMD: Visualize current folder`
+- `BloomMD: Open current note in BloomMD`
 
-The ribbon button runs `Visualize current note`.
+## Feedback
 
-## Privacy
-
-- Works locally by default.
-- Does not upload vault contents.
-- Does not send file names to analytics.
-- Does not put Markdown contents into URL parameters.
-- The plugin contains no telemetry and does not upload vault contents.
-- External opening is explicit and explained to the user.
-- Editing uses local Vault operations and does not upload note contents.
-- Node positions and viewport state remain in `.obsidian/plugins/bloommd/data.json`.
-
-## Manual Beta Installation
-
-1. Build the plugin:
-
-   ```bash
-   cd plugins/obsidian
-   bun install
-   bun run build
-   ```
-
-2. Copy these files into `<vault>/.obsidian/plugins/bloommd/`:
-
-   ```text
-   manifest.json
-   main.js
-   styles.css
-   ```
-
-3. Open Obsidian settings, enable Community Plugins, then enable BloomMD.
-
-BloomMD for Obsidian `0.5.0` is intentionally marked desktop-only until the iOS and Android interaction matrix has passed. The supported beta platforms are macOS, Windows, and Linux.
+This is a beta and feedback is the point of it. [Open an issue](https://github.com/bloommd-app/bloommd-obsidian/issues) — bug reports, missing shortcuts, and "this broke my note" reports are all equally welcome. Please include your Obsidian version and, if a note rendered wrong, a minimal example of the Markdown.
 
 ## Development
-
-Run from the repository root (in the BloomMD monorepo: `cd plugins/obsidian` first).
 
 ```bash
 bun install
@@ -76,20 +77,23 @@ bun run typecheck
 bun run test
 bun run build
 bun run release:verify
-bun run release:package
 ```
 
-See [RELEASE.md](RELEASE.md) for the dedicated public repository and Obsidian Community Plugin release process.
+The Markdown engine is covered by unit tests, including CommonMark edge cases: Setext headings, fenced and indented code, HTML blocks, unterminated frontmatter, ATX closing sequences, and heading-depth limits. See [RELEASE.md](RELEASE.md) for the release process.
 
 ## Roadmap
 
-- Safer Desktop handoff with local file permission flow.
-- Optional backlink edges on the canvas.
-- Mobile Obsidian validation and touch-specific interaction hardening.
-- Official Obsidian Community Plugin submission after beta testing.
+- Mobile Obsidian support after the touch interaction matrix passes
+- Optional backlink edges on the canvas
+- Safer desktop handoff with an explicit local file permission flow
+- Obsidian Community Plugin directory submission after the beta
 
 ## Links
 
 - Web app: https://bloommd.app
-- Public demo: https://bloommd.app/demo
-- Report an issue: https://github.com/bloommd-app/bloommd-obsidian/issues
+- Try it without installing: https://bloommd.app/demo
+- [Changelog](CHANGELOG.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
+
+## License
+
+MIT
