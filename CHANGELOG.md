@@ -13,6 +13,9 @@
   used to gain one more `bloommd:id` comment on every single open, growing the line without bound.
 - Treat tab-indented lines as indented code, matching CommonMark, so `\t## text` is no longer read
   as a heading and no longer receives an id comment.
+- Fix a branch move landing outside the target section. When the target's section ended exactly
+  where the moved branch began, the splice index was not corrected and the branch was inserted
+  after the section, breaking the heading hierarchy.
 - Remove the last hard desktop dependency: the optional file handoff is now guarded by
   `Platform.isDesktop` and falls back to the web target everywhere else. The manifest stays
   `isDesktopOnly` until the mobile device test matrix has been executed.

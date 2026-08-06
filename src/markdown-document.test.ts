@@ -10,6 +10,7 @@ import {
   flattenHeadings,
   moveHeadingBranch,
   parseHeadingTree,
+  type MarkdownHeadingNode,
 } from "./markdown-document";
 
 const NOTE = `---
@@ -240,5 +241,34 @@ describe("id stability in real vaults", () => {
     const result = ensureHeadingIds("# Root\r\n\r\n## A\r\n").markdown;
     expect(result).toContain("\r\n");
     expect(result).not.toMatch(/[^\r]\n/);
+  });
+});
+
+describe("branch moves keep the hierarchy intact", () => {
+  const ids = (markdown: string) =>
+    Object.fromEntries(flattenHeadings(parseHeadingTree(markdown)).map((node) => [node.title, node.id]));
+
+  test("moving the last branch onto its own parent keeps it inside that section", () => {
+    // Regression: the splice index was only corrected for targets strictly after the branch, so a
+    // parent whose section ended with the branch received it *after* the section instead.
+    let note = ensureHeadingIds("# Root\n\n## Alpha\n\n### One\n\n### Two\n\n## Beta\n").markdown;
+    const before = ids(note);
+    note = moveHeadingBranch(note, before.Two!, before.Alpha!);
+    const alpha = flattenHeadings(parseHeadingTree(note)).find((node) => node.title === "Alpha")!;
+    expect(alpha.children.map((child) => child.title)).toEqual(["One", "Two"]);
+    expect(alpha.children.every((child) => child.level === alpha.level + 1)).toBe(true);
+  });
+
+  test("every child stays exactly one level below its parent after a move", () => {
+    let note = ensureHeadingIds("# Root\n\n## Alpha\n\n### One\n\n## Beta\n\n### Two\n").markdown;
+    const before = ids(note);
+    note = moveHeadingBranch(note, before.Beta!, before.One!);
+    const walk = (node: MarkdownHeadingNode) => {
+      for (const child of node.children) {
+        expect(child.level).toBe(node.level + 1);
+        walk(child);
+      }
+    };
+    parseHeadingTree(note).forEach(walk);
   });
 });

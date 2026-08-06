@@ -415,7 +415,10 @@ export function moveHeadingBranch(markdown: string, sourceId: string, targetPare
   );
 
   lines.splice(source.startLine, branchLength);
-  const insertionLine = target.sectionEndLine > source.sectionEndLine
+  // The branch was spliced out first, so every original index at or after its end shifts left.
+  // Using a strict `>` missed the case where the target section ends exactly where the branch did —
+  // moving a node onto its own parent then inserted it past the section and broke the hierarchy.
+  const insertionLine = target.sectionEndLine >= source.sectionEndLine
     ? target.sectionEndLine - branchLength
     : target.sectionEndLine;
   if (insertionLine > 0 && lines[insertionLine - 1]?.trim() !== "" && branch[0]?.trim() !== "") {
