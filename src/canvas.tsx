@@ -143,7 +143,7 @@ const EMPTY_LAYOUT: PersistedCanvasLayout = { positions: {}, collapsed: [] };
 const NODE_WIDTH = 236;
 const NODE_HEIGHT = 92;
 
-function externalLinks(markdown: string): ExternalLink[] {
+export function externalLinks(markdown: string): ExternalLink[] {
   const links: ExternalLink[] = [];
   const seen = new Set<string>();
   const add = (url: string, label: string) => {
@@ -159,7 +159,7 @@ function externalLinks(markdown: string): ExternalLink[] {
     links.push({ url: cleaned, label: label || host, host });
   };
 
-  for (const match of markdown.matchAll(/\[([^\]]+)]\((https?:\/\/[^)\s]+)\)/g)) {
+  for (const match of markdown.matchAll(/\[([^\]]+)]\((https?:\/\/(?:[^()\s]|\([^()\s]*\))*)\)/g)) {
     add(match[2] ?? "", (match[1] ?? "").trim());
   }
   for (const match of markdown.matchAll(/(^|[\s(])(https?:\/\/[^\s<>)\]]+)/g)) {
@@ -168,7 +168,7 @@ function externalLinks(markdown: string): ExternalLink[] {
   return links;
 }
 
-function wikiLinks(markdown: string): WikiLink[] {
+export function wikiLinks(markdown: string): WikiLink[] {
   const links: WikiLink[] = [];
   const seen = new Set<string>();
   for (const match of markdown.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?]]/g)) {
@@ -181,17 +181,17 @@ function wikiLinks(markdown: string): WikiLink[] {
   return links;
 }
 
-function contentPreview(markdown: string): string {
+export function contentPreview(markdown: string): string {
   return markdown
     .replace(/```[\s\S]*?```/g, "Code block")
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
-    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?]]/g, "$2$1")
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?]]/g, (_match, target: string, alias?: string) => alias ?? target)
     .replace(/[*_`>#-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function visibleHeadingIds(headings: CanvasHeading[], collapsed: Set<string>, rootId: string): Set<string> {
+export function visibleHeadingIds(headings: CanvasHeading[], collapsed: Set<string>, rootId: string): Set<string> {
   const byId = new Map(headings.map((heading) => [heading.id, heading]));
   const visible = new Set<string>();
   const walk = (id: string) => {
@@ -205,7 +205,7 @@ function visibleHeadingIds(headings: CanvasHeading[], collapsed: Set<string>, ro
   return visible;
 }
 
-function autoLayout(headings: CanvasHeading[], visible: Set<string>): Record<string, NodePosition> {
+export function autoLayout(headings: CanvasHeading[], visible: Set<string>): Record<string, NodePosition> {
   const graph = new dagre.graphlib.Graph();
   graph.setGraph({ rankdir: "LR", ranksep: 110, nodesep: 48, marginx: 70, marginy: 70 });
   graph.setDefaultEdgeLabel(() => ({}));

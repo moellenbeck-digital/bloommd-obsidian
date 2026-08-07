@@ -9,7 +9,7 @@
     "release:verify": "node scripts/release.mjs --verify",
     "release:package": "bun run build && node scripts/release.mjs --package",
     "typecheck": "tsc --noEmit",
-    "test": "bun test src/markdown-document.test.ts"
+    "test": "bun test src/markdown-document.test.ts src/canvas.test.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",
