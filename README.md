@@ -46,14 +46,14 @@ This is the part worth reading before you install anything into a real vault.
 ### Beta via BRAT (recommended)
 
 1. Install the **Obsidian42 - BRAT** community plugin.
-2. In BRAT: *Add Beta Plugin* → `bloommd-app/bloommd-obsidian`
+2. In BRAT: *Add Beta Plugin* → `moellenbeck-digital/bloommd-obsidian`
 3. Enable **BloomMD for Obsidian** under Community Plugins.
 
 BRAT keeps the plugin updated as new beta releases are tagged.
 
 ### Manual
 
-1. Download `manifest.json`, `main.js`, and `styles.css` from the [latest release](https://github.com/bloommd-app/bloommd-obsidian/releases/latest).
+1. Download `manifest.json`, `main.js`, and `styles.css` from the [latest release](https://github.com/moellenbeck-digital/bloommd-obsidian/releases/latest).
 2. Copy them into `<vault>/.obsidian/plugins/bloommd/`.
 3. Enable Community Plugins, then enable BloomMD.
 
@@ -67,7 +67,7 @@ BRAT keeps the plugin updated as new beta releases are tagged.
 
 ## Feedback
 
-This is a beta and feedback is the point of it. [Open an issue](https://github.com/bloommd-app/bloommd-obsidian/issues) — bug reports, missing shortcuts, and "this broke my note" reports are all equally welcome. Please include your Obsidian version and, if a note rendered wrong, a minimal example of the Markdown.
+This is a beta and feedback is the point of it. [Open an issue](https://github.com/moellenbeck-digital/bloommd-obsidian/issues) — bug reports, missing shortcuts, and "this broke my note" reports are all equally welcome. Please include your Obsidian version and, if a note rendered wrong, a minimal example of the Markdown.
 
 ## Development
 
@@ -83,10 +83,7 @@ The Markdown engine is covered by unit tests, including CommonMark edge cases: S
 
 ## Roadmap
 
-- Mobile Obsidian support after the touch interaction matrix passes
-- Optional backlink edges on the canvas
-- Safer desktop handoff with an explicit local file permission flow
-- Obsidian Community Plugin directory submission after the beta
+The active roadmap and backlog live in the [BloomMD GitHub Project Board](https://github.com/orgs/moellenbeck-digital/projects/3). Local TODO files should not be used as a parallel source of truth.
 
 ## Links
 

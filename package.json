@@ -9,22 +9,22 @@
     "release:verify": "node scripts/release.mjs --verify",
     "release:package": "bun run build && node scripts/release.mjs --package",
     "typecheck": "tsc --noEmit",
-    "test": "bun test src/markdown-document.test.ts"
+    "test": "bun test src/markdown-document.test.ts src/canvas.test.ts"
   },
   "dependencies": {
-    "@xyflow/react": "^12.10.2",
+    "@xyflow/react": "^12.11.2",
     "dagre": "^0.8.5",
-    "lucide-react": "^1.7.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "lucide-react": "^1.30.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@types/dagre": "^0.7.52",
-    "@types/node": "^24.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "esbuild": "^0.25.0",
-    "obsidian": "^1.8.7",
-    "typescript": "^5.8.0"
+    "@types/dagre": "^0.7.54",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "esbuild": "^0.28.1",
+    "obsidian": "^1.13.1",
+    "typescript": "^7.0.2"
   }
 }
