@@ -4,7 +4,7 @@ Obsidian expects `manifest.json`, `README.md`, and the license at the root of a 
 
 ## Repository topology
 
-The plugin ships from the public repository `bloommd-app/bloommd-obsidian`, whose root is a mirror of `plugins/obsidian` in the private BloomMD monorepo. The nested `.github/workflows/release.yml` is active there.
+The plugin ships from the public repository `moellenbeck-digital/bloommd-obsidian`, whose root is a mirror of `plugins/obsidian` in the private BloomMD monorepo. The nested `.github/workflows/release.yml` is active there.
 
 From the BloomMD monorepo, mirror the plugin into a checkout of the public repository:
 
