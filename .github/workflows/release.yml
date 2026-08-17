@@ -34,3 +34,4 @@ jobs:
             manifest.json
             main.js
             styles.css
+          body_path: CHANGELOG.md
