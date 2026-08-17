@@ -36,7 +36,7 @@ import {
 } from "./canvas";
 
 const VIEW_TYPE_BLOOMMD = "bloommd-mindmap-view";
-const BLOOMMD_WEB_DEMO = "https://bloommd.app/demo";
+const BLOOMMD_WEB_DEMO = "https://bloommd.io/demo";
 
 interface BloomMDSettings {
   openTarget: "desktop" | "web";
@@ -146,10 +146,9 @@ class BloomMDView extends ItemView {
   }
 
   async onOpen() {
-    const root = this.containerEl.children[1] as HTMLElement;
-    root.empty();
-    root.addClass("bloommd-view-host");
-    this.mount = createCanvasMount(root);
+    this.contentEl.empty();
+    this.contentEl.addClass("bloommd-view-host");
+    this.mount = createCanvasMount(this.contentEl);
     this.renderCanvas();
   }
 
@@ -519,8 +518,7 @@ export default class BloomMDPlugin extends Plugin {
   private async getOrCreateView(): Promise<BloomMDView> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD)[0];
     if (existing?.view instanceof BloomMDView) return existing.view;
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (!leaf) throw new Error("Unable to create BloomMD view.");
+    const leaf = this.app.workspace.getLeaf("split", "vertical");
     await leaf.setViewState({ type: VIEW_TYPE_BLOOMMD, active: true });
     if (!(leaf.view instanceof BloomMDView)) throw new Error("Unable to load BloomMD view.");
     return leaf.view;
@@ -555,7 +553,7 @@ class BloomMDSettingTab extends PluginSettingTab {
 
   display(): void {
     this.containerEl.empty();
-    this.containerEl.createEl("h2", { text: "BloomMD for Obsidian" });
+    this.containerEl.createEl("h2", { text: "BloomMD" });
 
     new Setting(this.containerEl)
       .setName("Open in BloomMD")

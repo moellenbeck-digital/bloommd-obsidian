@@ -143,6 +143,14 @@ const EMPTY_LAYOUT: PersistedCanvasLayout = { positions: {}, collapsed: [] };
 const NODE_WIDTH = 236;
 const NODE_HEIGHT = 92;
 
+function sameStringSet(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
+}
+
 export function externalLinks(markdown: string): ExternalLink[] {
   const links: ExternalLink[] = [];
   const seen = new Set<string>();
@@ -724,11 +732,18 @@ function CanvasInner(props: CanvasProps) {
             edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onPaneClick={() => { setSelectedId(null); setSelectedIds(new Set()); }}
+            onPaneClick={() => {
+              setSelectedId((current) => current === null ? current : null);
+              setSelectedIds((current) => current.size === 0 ? current : new Set());
+            }}
             onSelectionChange={({ nodes: selectedNodes }) => {
               const ids = new Set(selectedNodes.map((node) => node.id));
-              setSelectedIds(ids);
-              if (ids.size > 0 && (!selectedId || !ids.has(selectedId))) setSelectedId([...ids][0] ?? null);
+              setSelectedIds((current) => sameStringSet(current, ids) ? current : ids);
+              setSelectedId((current) => {
+                if (ids.size === 0) return current === null ? current : null;
+                if (current && ids.has(current)) return current;
+                return [...ids][0] ?? null;
+              });
             }}
             onNodeDragStop={(_, node) => {
               runtimePositions.current = { ...runtimePositions.current, [node.id]: node.position };

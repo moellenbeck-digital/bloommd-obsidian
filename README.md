@@ -1,10 +1,10 @@
-# BloomMD for Obsidian
+# BloomMD
 
 **Turn any note into an editable mind map — without a second file format.**
 
 Most mind map plugins render your note into a separate view, or store the map in their own file. BloomMD edits the note itself. Drag a branch and the heading hierarchy in your Markdown changes. Close the plugin and you are left with a normal `.md` file that still works in Obsidian, Git, and any text editor.
 
-<!-- Add a real screen recording here before the public beta announcement. -->
+BloomMD is a public desktop beta for Obsidian. It turns the note you already have into an editable visual map while keeping Markdown portable.
 
 ## What it does
 
@@ -47,7 +47,7 @@ This is the part worth reading before you install anything into a real vault.
 
 1. Install the **Obsidian42 - BRAT** community plugin.
 2. In BRAT: *Add Beta Plugin* → `moellenbeck-digital/bloommd-obsidian`
-3. Enable **BloomMD for Obsidian** under Community Plugins.
+3. Enable **BloomMD** under Community Plugins.
 
 BRAT keeps the plugin updated as new beta releases are tagged.
 
@@ -67,7 +67,7 @@ BRAT keeps the plugin updated as new beta releases are tagged.
 
 ## Feedback
 
-This is a beta and feedback is the point of it. [Open an issue](https://github.com/moellenbeck-digital/bloommd-obsidian/issues) — bug reports, missing shortcuts, and "this broke my note" reports are all equally welcome. Please include your Obsidian version and, if a note rendered wrong, a minimal example of the Markdown.
+This is a public beta. [Open an issue](https://github.com/moellenbeck-digital/bloommd-obsidian/issues) for bugs, missing shortcuts, or a note that rendered incorrectly. Include your Obsidian version and a minimal Markdown example when possible. Do not attach private vault content.
 
 ## Development
 
@@ -88,7 +88,8 @@ The active roadmap and backlog live in the [BloomMD GitHub Project Board](https:
 ## Links
 
 - Web app: https://bloommd.app
-- Try it without installing: https://bloommd.app/demo
+- Website and demo: https://bloommd.io
+- Try it without installing: https://bloommd.io/demo
 - [Changelog](CHANGELOG.md) · [Privacy](PRIVACY.md) · [Security](SECURITY.md)
 
 ## License

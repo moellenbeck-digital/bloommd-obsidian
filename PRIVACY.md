@@ -1,6 +1,6 @@
 # Privacy
 
-BloomMD for Obsidian is local-first.
+BloomMD is local-first.
 
 The plugin reads and edits the active Markdown note or current folder through Obsidian's local Vault API. It does not upload vault contents, file names, folder names, node text, Markdown contents, or local layout data.
 

@@ -20,9 +20,16 @@ private Markdown. Review the diff in the public checkout before committing and t
 1. Update `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md` to the same version.
 2. Run `bun install --frozen-lockfile`.
 3. Run `bun run typecheck`, `bun run test`, and `bun run release:package`.
-4. Test the generated files from `release/<version>/` in clean Obsidian installations on macOS, Windows, and Linux.
-5. Push the dedicated repository and create an exact version tag such as `0.4.0`.
+4. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
+5. Push the dedicated repository and create an exact version tag such as `0.5.0`.
 6. Verify the GitHub release contains `manifest.json`, `main.js`, and `styles.css`.
 7. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
+
+## 0.5.0 public beta evidence
+
+- Version is synchronized across `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md`.
+- The release workflow runs audit, typecheck, tests, build, and the release contract before publishing assets.
+- The clean-vault preparation script installs the generated `manifest.json`, `main.js`, and `styles.css` without copying private vault data.
+- BRAT installation remains a manual verification step because it requires the Obsidian desktop application.
 
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

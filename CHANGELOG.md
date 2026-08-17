@@ -2,6 +2,18 @@
 
 ## 0.5.0
 
+BloomMD 0.5.0 is the first public desktop beta. It turns an existing Markdown note or folder into an editable map and writes structural changes back to the same Markdown files.
+
+Included:
+
+- Current-note and current-folder visualization.
+- Editable mind maps with rename, add sibling/child, branch moves, branch deletion, copy/paste, and undo/redo.
+- Round-trip Markdown editing with frontmatter, code blocks, unrelated sections, and stable node IDs preserved.
+- External Markdown links, Obsidian wiki links, linked mentions, and relationship previews.
+- Local-only processing with no telemetry, vault upload, or Markdown content in URL parameters.
+- Separate local layout and viewport state stored in Obsidian plugin data.
+- BRAT-ready public beta distribution for desktop Obsidian.
+
 - Read Setext headings (`Title` over `===` or `---`) so notes written in that style no longer show an
   empty or truncated mind map.
 - Ignore headings inside HTML blocks. BloomMD no longer writes node IDs into a note's raw HTML.

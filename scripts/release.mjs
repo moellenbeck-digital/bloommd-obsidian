@@ -47,7 +47,7 @@ if (process.argv.includes("--package")) {
   for (const file of ["main.js", "manifest.json", "styles.css", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md"]) {
     await cp(join(root, file), join(output, file));
   }
-  console.log(`Prepared BloomMD for Obsidian ${manifest.version} in ${output}`);
+  console.log(`Prepared BloomMD ${manifest.version} in ${output}`);
 } else {
-  console.log(`BloomMD for Obsidian ${manifest.version} release contract verified.`);
+  console.log(`BloomMD ${manifest.version} release contract verified.`);
 }
