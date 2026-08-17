@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Fix duplicate child creation when pressing `Tab` on a heading node.
+- Stop keyboard-event bubbling, ignore held-key repeats, and prevent concurrent child mutations for the same source node.
+
 ## 0.5.0
 
 BloomMD 0.5.0 is the first public desktop beta. It turns an existing Markdown note or folder into an editable map and writes structural changes back to the same Markdown files.

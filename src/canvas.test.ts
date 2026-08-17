@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { contentPreview, externalLinks, visibleHeadingIds, wikiLinks } from "./canvas";
+import { claimPendingAction, contentPreview, externalLinks, visibleHeadingIds, wikiLinks } from "./canvas";
 import type { CanvasHeading } from "./canvas";
 
 const heading = (id: string, parentId: string | null, children: string[], level = 1): CanvasHeading => ({
@@ -115,5 +115,17 @@ describe("visibleHeadingIds", () => {
   test("still shows the tree when the root id is stale", () => {
     // Degrading to the parentless branches beats rendering an empty canvas after an edit.
     expect(visibleHeadingIds(tree, new Set(), "missing").size).toBe(4);
+  });
+});
+
+describe("keyboard mutation guards", () => {
+  test("allows one pending child action per source node", () => {
+    const pending = new Set<string>();
+
+    expect(claimPendingAction(pending, "root")).toBe(true);
+    expect(claimPendingAction(pending, "root")).toBe(false);
+
+    pending.delete("root");
+    expect(claimPendingAction(pending, "root")).toBe(true);
   });
 });

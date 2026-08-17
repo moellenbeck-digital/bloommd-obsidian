@@ -109,6 +109,12 @@ export interface CanvasMount {
   unmount: () => void;
 }
 
+export function claimPendingAction(pending: Set<string>, id: string): boolean {
+  if (pending.has(id)) return false;
+  pending.add(id);
+  return true;
+}
+
 interface ExternalLink {
   label: string;
   url: string;
@@ -283,6 +289,8 @@ function BloomNode({ id, data }: NodeProps<BloomFlowNode>) {
           setEditing(true);
         } else if (event.key === "Tab") {
           event.preventDefault();
+          event.stopPropagation();
+          if (event.repeat) return;
           data.onAddChild(id);
         } else if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && !isRoot) {
           event.preventDefault();
@@ -502,6 +510,7 @@ function CanvasInner(props: CanvasProps) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(() => new Set(props.layout.collapsed));
   const [saveState, setSaveState] = useState<"saved" | "saving" | "conflict">("saved");
+  const pendingChildAdds = useRef(new Set<string>());
   const latestLayout = useRef<PersistedCanvasLayout>(props.layout ?? EMPTY_LAYOUT);
   const runtimePositions = useRef<Record<string, NodePosition>>(props.layout.positions ?? {});
 
@@ -546,6 +555,22 @@ function CanvasInner(props: CanvasProps) {
     });
   }, [persist]);
 
+  const addChild = useCallback((id: string) => {
+    if (!claimPendingAction(pendingChildAdds.current, id)) return;
+    void run(async () => {
+      try {
+        const newId = await props.actions.addChild(id);
+        if (newId) {
+          selectNode(newId);
+          setInspectorOpen(true);
+        }
+        return Boolean(newId);
+      } finally {
+        pendingChildAdds.current.delete(id);
+      }
+    });
+  }, [props.actions, run, selectNode]);
+
   const flowModel = useMemo(() => {
     const automatic = autoLayout(props.headings, visibleIds);
     const nodes: BloomFlowNode[] = props.headings
@@ -565,16 +590,7 @@ function CanvasInner(props: CanvasProps) {
           onSelect: selectNode,
           onRename: (id, title, expected) => run(() => props.actions.renameNode(id, title, expected)),
           onToggleCollapse: toggleCollapse,
-          onAddChild: (id) => {
-            void run(async () => {
-              const newId = await props.actions.addChild(id);
-              if (newId) {
-                selectNode(newId);
-                setInspectorOpen(true);
-              }
-              return Boolean(newId);
-            });
-          },
+          onAddChild: addChild,
           onAddSibling: (id) => {
             void run(async () => {
               const newId = await props.actions.addSibling(id);
@@ -597,7 +613,7 @@ function CanvasInner(props: CanvasProps) {
       .filter((heading) => heading.parentId && visibleIds.has(heading.id) && visibleIds.has(heading.parentId))
       .map((heading) => ({ id: `${heading.parentId}-${heading.id}`, source: heading.parentId!, target: heading.id, type: "bloommd" }));
     return { nodes, edges };
-  }, [collapsed, props.actions, props.headings, props.layout.positions, props.showNodeContent, run, selectNode, selectedIds, toggleCollapse, visibleIds]);
+  }, [addChild, collapsed, props.actions, props.headings, props.layout.positions, props.showNodeContent, run, selectNode, selectedIds, toggleCollapse, visibleIds]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<BloomFlowNode>(flowModel.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowModel.edges);
