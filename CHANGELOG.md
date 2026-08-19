@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.4
+
+BloomMD 0.5.4 is a small public beta patch for the Obsidian Community Directory.
+
+- Add a dedicated BloomMD plugin icon based on a Markdown note branching into map relationships.
+- Include the icon in packaged and GitHub release assets.
+
 ## 0.5.3
 
 BloomMD 0.5.3 is a maintenance release for the public desktop beta.

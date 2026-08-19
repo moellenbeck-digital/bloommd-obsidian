@@ -14,7 +14,7 @@ if (versions[manifest.version] !== manifest.minAppVersion) errors.push("versions
 if (manifest.id !== "bloommd") errors.push("manifest id must remain bloommd");
 if (manifest.isDesktopOnly !== true) errors.push("mobile support must not be advertised before the mobile test matrix passes");
 
-for (const file of ["main.js", "manifest.json", "styles.css", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md"]) {
+for (const file of ["main.js", "manifest.json", "styles.css", "icon.png", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md"]) {
   try {
     const info = await stat(join(root, file));
     if (!info.isFile() || info.size === 0) errors.push(`${file} is empty`);
@@ -44,7 +44,7 @@ if (process.argv.includes("--package")) {
   const output = join(root, "release", manifest.version);
   await rm(output, { recursive: true, force: true });
   await mkdir(output, { recursive: true });
-  for (const file of ["main.js", "manifest.json", "styles.css", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md"]) {
+  for (const file of ["main.js", "manifest.json", "styles.css", "icon.png", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md"]) {
     await cp(join(root, file), join(output, file));
   }
   console.log(`Prepared BloomMD ${manifest.version} in ${output}`);

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="title desc">
+  <title id="title">BloomMD</title>
+  <desc id="desc">BloomMD Obsidian plugin icon: a Markdown note branching into connected map nodes.</desc>
+  <rect width="512" height="512" rx="112" fill="#1A1A1A"/>
+  <g fill="none" stroke="#FAFAFA" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M108 74h152l80 80v258a32 32 0 0 1-32 32H108a32 32 0 0 1-32-32V106a32 32 0 0 1 32-32Z"/>
+    <path d="M260 74v80h80"/>
+    <path d="M140 230h112M140 294h112M140 358h72"/>
+    <path d="M340 294h40M380 294c38 0 38-74 78-74h22M380 294c38 0 38 74 78 74h22" stroke="#FF6B35"/>
+  </g>
+  <circle cx="380" cy="294" r="36" fill="#FF6B35"/>
+  <circle cx="484" cy="220" r="24" fill="#FAFAFA"/>
+  <circle cx="484" cy="368" r="24" fill="#FAFAFA"/>
+</svg>

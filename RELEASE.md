@@ -1,6 +1,6 @@
 # Obsidian Release Process
 
-Obsidian expects `manifest.json`, `README.md`, and the license at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix, and each GitHub release must attach `manifest.json`, `main.js`, and `styles.css`.
+Obsidian expects `manifest.json`, `README.md`, the license, and the optional `icon.png` at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix, and each GitHub release must attach `manifest.json`, `main.js`, `styles.css`, and `icon.png`.
 
 ## Repository topology
 
@@ -22,7 +22,7 @@ private Markdown. Review the diff in the public checkout before committing and t
 3. Run `bun run typecheck`, `bun run test`, and `bun run release:package`.
 4. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
 5. Push the dedicated repository and create an exact version tag such as `0.5.0`.
-6. Verify the GitHub release contains `manifest.json`, `main.js`, and `styles.css`.
+6. Verify the GitHub release contains `manifest.json`, `main.js`, `styles.css`, and `icon.png`.
 7. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
 
 ## 0.5.0 public beta evidence
@@ -52,5 +52,11 @@ private Markdown. Review the diff in the public checkout before committing and t
 - Raises `minAppVersion` to `1.13.0`, which is the minimum for the APIs used by this release.
 - React 18 removes the three dynamic script creations previously detected in the bundled `main.js`.
 - The exact `0.5.3` tag must be used; earlier release tags remain immutable.
+
+## 0.5.4 patch evidence
+
+- Adds the dedicated `icon.png` used by the Obsidian Community Directory.
+- The icon is packaged and attached to the GitHub release together with the standard plugin assets.
+- The exact `0.5.4` tag must be used; earlier release tags remain immutable.
 
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.
