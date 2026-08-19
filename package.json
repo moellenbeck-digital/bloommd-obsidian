@@ -1,6 +1,6 @@
 {
   "name": "bloommd-obsidian",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "BloomMD companion plugin for Obsidian",
   "main": "main.js",

@@ -10,6 +10,9 @@ import {
   flattenHeadings,
   moveHeadingBranch,
   parseHeadingTree,
+  renameHeading,
+  updateHeadingMetadata,
+  type MarkdownNodeMetadata,
   type MarkdownHeadingNode,
 } from "./markdown-document";
 
@@ -55,6 +58,32 @@ describe("Obsidian Markdown editing", () => {
     expect(parseHeadingTree(renamed)[0]?.title).toBe("Roadmap portal");
   });
 
+  test("parses typed metadata and updates only the metadata comment", () => {
+    const markdown = '# Research <!-- bloommd:id=research --> <!-- bloommd:meta={"kind":"source","url":"https://example.com","citation":"Author (2026)"} -->\n\nKeep this body.\n';
+    const parsed = parseHeadingTree(markdown)[0]!;
+    expect(parsed.metadata).toEqual({ kind: "source", url: "https://example.com", citation: "Author (2026)" });
+
+    const next: MarkdownNodeMetadata = {
+      kind: "web",
+      url: "https://bloommd.io",
+      previewTitle: "BloomMD",
+      previewDescription: "Markdown visualized.",
+    };
+    const updated = updateHeadingMetadata(markdown, "research", next);
+    expect(updated).toContain('<!-- bloommd:id=research -->');
+    expect(updated).toContain('<!-- bloommd:meta={"kind":"web","url":"https://bloommd.io","previewTitle":"BloomMD","previewDescription":"Markdown visualized."} -->');
+    expect(updated).toContain("Keep this body.");
+    expect(parseHeadingTree(updated)[0]?.metadata).toEqual(next);
+  });
+
+  test("removes metadata when a node is changed back to a topic", () => {
+    const markdown = '# Portal <!-- bloommd:id=portal --> <!-- bloommd:meta={"kind":"portal","file":"Roadmap.md"} -->\n';
+    const updated = updateHeadingMetadata(markdown, "portal", undefined);
+    expect(updated).toContain('<!-- bloommd:id=portal -->');
+    expect(updated).not.toContain("bloommd:meta=");
+    expect(parseHeadingTree(updated)[0]?.metadata).toBeUndefined();
+  });
+
   test("parses frontmatter and ignores headings inside code fences", () => {
     const nodes = parseHeadingTree(NOTE);
     expect(nodes).toHaveLength(1);
@@ -69,6 +98,17 @@ describe("Obsidian Markdown editing", () => {
     expect(result).toContain("### Local privacy\n\nNothing leaves the vault.");
     expect(result).toContain("# Not a heading");
     expect(result).toContain("## Open Questions");
+  });
+
+  test("renames a newly created placeholder without changing its content", () => {
+    const withIds = ensureHeadingIds(NOTE).markdown;
+    const goalId = nodeId(withIds, "Goal");
+    const result = renameHeading(withIds, goalId, "Project goal");
+    const renamed = findHeading(parseHeadingTree(result), goalId);
+
+    expect(renamed?.title).toBe("Project goal");
+    expect(renamed?.content).toBe("Visualize this note as a mind map.");
+    expect(result).toContain("title: Plugin test");
   });
 
   test("adds a child after the complete parent branch", () => {

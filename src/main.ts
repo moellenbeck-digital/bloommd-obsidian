@@ -21,9 +21,11 @@ import {
   findHeading,
   findHeadingParent,
   flattenHeadings,
+  metadataEquals,
   moveHeadingBranch,
   parseHeadingTree,
   renameHeading,
+  updateHeadingMetadata,
   updateHeadingContent,
   type MarkdownHeadingNode,
 } from "./markdown-document";
@@ -33,6 +35,7 @@ import {
   type CanvasHeading,
   type CanvasMount,
   type PersistedCanvasLayout,
+  type ResourceEntry,
 } from "./canvas";
 
 const VIEW_TYPE_BLOOMMD = "bloommd-mindmap-view";
@@ -71,6 +74,7 @@ function canvasHeadings(nodes: MarkdownHeadingNode[]): CanvasHeading[] {
       content: node.content,
       children: node.children.map((child) => child.id),
       kind: "heading",
+      ...(node.metadata ? { metadata: node.metadata } : {}),
     });
     node.children.forEach((child) => walk(child, node.id));
   };
@@ -332,6 +336,7 @@ class BloomMDView extends ItemView {
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       showNodeContent: this.plugin.settings.showNodeContent,
+      resources: this.plugin.resourceFiles(),
       actions: {
         renameNode: (id, title, expectedTitle) => editable
           ? this.applyMutation((markdown) => {
@@ -347,12 +352,20 @@ class BloomMDView extends ItemView {
               return updateHeadingContent(markdown, id, content);
             })
           : Promise.resolve(false),
+        updateMetadata: (id, metadata, expectedMetadata) => editable
+          ? this.applyMutation((markdown) => {
+              const node = this.currentNode(markdown, id);
+              if (!metadataEquals(node.metadata, expectedMetadata)) throw new Error("This node metadata changed in Obsidian. Reload before editing it.");
+              return updateHeadingMetadata(markdown, id, metadata);
+            })
+          : Promise.resolve(false),
         addChild: (id) => editable ? this.addChildNode(id) : Promise.resolve(null),
         addSibling: (id) => editable ? this.addSiblingNode(id) : Promise.resolve(null),
         deleteBranch: async (id) => {
           if (!editable) return false;
           const node = this.headings.find((heading) => heading.id === id);
-          if (!node || !window.confirm(`Delete "${node.title}" and its complete branch?`)) return true;
+          if (!node) return false;
+          if (!window.confirm(`Delete "${node.title}" and its complete branch?`)) return false;
           return this.applyMutation((markdown) => deleteHeadingBranch(markdown, id));
         },
         reparentBranch: (id, parentId) => {
@@ -494,6 +507,13 @@ export default class BloomMDPlugin extends Plugin {
       .slice()
       .sort((a, b) => a.basename.localeCompare(b.basename))
       .map((file) => ({ path: file.path, title: file.basename }));
+  }
+
+  resourceFiles(): ResourceEntry[] {
+    return this.app.vault.getFiles()
+      .slice()
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map((file) => ({ path: file.path, title: file.basename, extension: file.extension.toLowerCase() }));
   }
 
   getLayout(key: string): PersistedCanvasLayout {

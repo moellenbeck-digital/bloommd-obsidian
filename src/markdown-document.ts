@@ -5,6 +5,7 @@ export interface MarkdownHeadingNode {
   content: string;
   children: MarkdownHeadingNode[];
   kind: "heading";
+  metadata?: MarkdownNodeMetadata;
   startLine: number;
   /** Last line the heading syntax itself occupies. Differs from `startLine` for Setext headings. */
   headingEndLine: number;
@@ -12,6 +13,29 @@ export interface MarkdownHeadingNode {
   contentEndLine: number;
   sectionEndLine: number;
   indent: string;
+}
+
+export type MarkdownNodeKind =
+  | "topic"
+  | "portal"
+  | "web"
+  | "file"
+  | "pdf"
+  | "source"
+  | "task"
+  | "decision";
+
+export interface MarkdownNodeMetadata {
+  kind: MarkdownNodeKind;
+  url?: string;
+  previewTitle?: string;
+  previewDescription?: string;
+  previewImage?: string;
+  file?: string;
+  targetNodeId?: string;
+  citation?: string;
+  status?: "open" | "in_progress" | "done";
+  decision?: "proposed" | "accepted" | "rejected";
 }
 
 interface ParsedLine {
@@ -23,6 +47,7 @@ interface ParsedLine {
   title: string;
   indent: string;
   persistedId: string | null;
+  metadata?: MarkdownNodeMetadata;
 }
 
 /** CommonMark HTML block type 6 tag names. A heading inside such a block is not a heading. */
@@ -58,6 +83,35 @@ function stripBloomMetadata(title: string): string {
 
 function extractBloomId(title: string): string | null {
   return title.match(/<!--\s*bloommd:id=([A-Za-z0-9_-]+)\s*-->/i)?.[1] ?? null;
+}
+
+const NODE_KINDS = new Set<MarkdownNodeKind>(["topic", "portal", "web", "file", "pdf", "source", "task", "decision"]);
+
+function parseNodeMetadata(title: string): MarkdownNodeMetadata | undefined {
+  const value = title.match(/<!--\s*bloommd:meta=(\{.*\})\s*-->/i)?.[1];
+  if (!value) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const record = parsed as Record<string, unknown>;
+    const kind = record.kind;
+    if (typeof kind !== "string" || !NODE_KINDS.has(kind as MarkdownNodeKind)) return undefined;
+    return {
+      kind: kind as MarkdownNodeKind,
+      ...(typeof record.url === "string" ? { url: record.url } : {}),
+      ...(typeof record.previewTitle === "string" ? { previewTitle: record.previewTitle } : {}),
+      ...(typeof record.previewDescription === "string" ? { previewDescription: record.previewDescription } : {}),
+      ...(typeof record.previewImage === "string" ? { previewImage: record.previewImage } : {}),
+      ...(typeof record.file === "string" ? { file: record.file } : {}),
+      ...(typeof record.targetNodeId === "string" ? { targetNodeId: record.targetNodeId } : {}),
+      ...(typeof record.citation === "string" ? { citation: record.citation } : {}),
+      ...(record.status === "open" || record.status === "in_progress" || record.status === "done" ? { status: record.status } : {}),
+      ...(record.decision === "proposed" || record.decision === "accepted" || record.decision === "rejected" ? { decision: record.decision } : {}),
+    };
+  } catch (error) {
+    console.warn("BloomMD: ignored malformed node metadata", error);
+    return undefined;
+  }
 }
 
 function generateNodeId(): string {
@@ -156,6 +210,7 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
         title: stripBloomMetadata(rawTitle),
         indent: atx[1]!,
         persistedId: extractBloomId(rawTitle),
+        metadata: parseNodeMetadata(rawTitle),
       });
       setextCandidate = null;
       return;
@@ -174,6 +229,7 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
         title: stripBloomMetadata(rawTitle),
         indent: /^( {0,3})/.exec(titleLine)![1]!,
         persistedId: extractBloomId(rawTitle),
+        metadata: parseNodeMetadata(rawTitle),
       });
       setextCandidate = null;
       return;
@@ -211,6 +267,7 @@ export function parseHeadingTree(markdown: string): MarkdownHeadingNode[] {
       contentEndLine: nextHeading?.line ?? lines.length,
       sectionEndLine: nextPeer?.line ?? lines.length,
       indent: heading.indent,
+      ...(heading.metadata ? { metadata: heading.metadata } : {}),
     };
     seenIds.add(node.id);
 
@@ -283,6 +340,14 @@ function persistedTypeMetadataSuffix(line: string): string {
   return [...line.matchAll(/<!--\s*bloommd:meta=[\s\S]*?-->/gi)].map((match) => match[0]).join(" ");
 }
 
+function serializeNodeMetadata(metadata: MarkdownNodeMetadata): string {
+  return `<!-- bloommd:meta=${JSON.stringify(metadata).replace(/-->/g, "--\\u003e")} -->`;
+}
+
+function sameMetadata(left: MarkdownNodeMetadata | undefined, right: MarkdownNodeMetadata | undefined): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
 export function renameHeading(markdown: string, id: string, title: string): string {
   const trimmedTitle = title.trim();
   if (!trimmedTitle || /[\r\n]/.test(trimmedTitle)) throw new Error("A node title must be one non-empty line.");
@@ -305,6 +370,21 @@ export function updateHeadingContent(markdown: string, id: string, content: stri
   const replacement = body.length > 0 ? ["", ...body, ""] : [""];
   lines.splice(node.headingEndLine + 1, node.contentEndLine - node.headingEndLine - 1, ...replacement);
   return lines.join(eol);
+}
+
+export function updateHeadingMetadata(markdown: string, id: string, metadata: MarkdownNodeMetadata | undefined): string {
+  const node = requireHeading(markdown, id);
+  if (metadata?.kind === "topic") metadata = undefined;
+  const { lines, eol } = splitMarkdown(markdown);
+  const source = lines[node.startLine] ?? "";
+  const withoutMetadata = source.replace(/\s*<!--\s*bloommd:meta=[\s\S]*?-->/gi, "").trimEnd();
+  const suffix = metadata ? ` ${serializeNodeMetadata(metadata)}` : "";
+  lines[node.startLine] = `${withoutMetadata}${suffix}`;
+  return lines.join(eol);
+}
+
+export function metadataEquals(left: MarkdownNodeMetadata | undefined, right: MarkdownNodeMetadata | undefined): boolean {
+  return sameMetadata(left, right);
 }
 
 export function editHeading(markdown: string, id: string, title: string, content: string): string {

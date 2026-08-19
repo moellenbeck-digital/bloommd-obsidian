@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { claimPendingAction, contentPreview, externalLinks, visibleHeadingIds, wikiLinks } from "./canvas";
+import { claimPendingAction, contentPreview, externalLinks, externalResourceKind, orderedHeadingIds, visibleHeadingIds, wikiLinks } from "./canvas";
 import type { CanvasHeading } from "./canvas";
 
 const heading = (id: string, parentId: string | null, children: string[], level = 1): CanvasHeading => ({
@@ -44,6 +44,19 @@ describe("externalLinks", () => {
 
   test("ignores non-http schemes", () => {
     expect(externalLinks("mailto:someone@example.com and ftp://example.com/file")).toEqual([]);
+  });
+});
+
+describe("externalResourceKind", () => {
+  test("classifies media and document URLs for local previews", () => {
+    expect(externalResourceKind("https://example.com/cover.png")).toBe("image");
+    expect(externalResourceKind("https://example.com/talk.mp4")).toBe("video");
+    expect(externalResourceKind("https://example.com/theme.mp3")).toBe("audio");
+    expect(externalResourceKind("https://example.com/spec.pdf")).toBe("pdf");
+  });
+
+  test("treats ordinary links as websites", () => {
+    expect(externalResourceKind("https://example.com/docs")).toBe("website");
   });
 });
 
@@ -115,6 +128,18 @@ describe("visibleHeadingIds", () => {
   test("still shows the tree when the root id is stale", () => {
     // Degrading to the parentless branches beats rendering an empty canvas after an edit.
     expect(visibleHeadingIds(tree, new Set(), "missing").size).toBe(4);
+  });
+});
+
+describe("orderedHeadingIds", () => {
+  test("follows the document hierarchy for outline and presentation", () => {
+    const tree = [
+      heading("root", null, ["a", "b"]),
+      heading("a", "root", ["a1"], 2),
+      heading("a1", "a", [], 3),
+      heading("b", "root", [], 2),
+    ];
+    expect(orderedHeadingIds(tree, "root")).toEqual(["root", "a", "a1", "b"]);
   });
 });
 

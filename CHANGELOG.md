@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- Add a visible Node title field to the inspector so newly created nodes can be named directly.
+- Focus and select the title field automatically for new `New node` placeholders.
+- Persist title edits through the same conflict-safe Markdown roundtrip as other node changes.
+
 ## 0.5.1
 
 - Fix duplicate child creation when pressing `Tab` on a heading node.

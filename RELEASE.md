@@ -37,4 +37,11 @@ private Markdown. Review the diff in the public checkout before committing and t
 - Fixes Issue #169: one `Tab` press can no longer start duplicate child mutations for the same node.
 - The patch release keeps the `0.5.0` tag immutable and uses the exact tag `0.5.1`.
 
+## 0.5.2 patch evidence
+
+- Fixes Issue #192: newly created nodes can be named directly in the inspector.
+- The title field focuses and selects the default `New node` title automatically.
+- Title changes use the existing conflict-safe Markdown roundtrip and preserve node content and metadata.
+- The exact `0.5.2` tag is used; earlier release tags remain immutable.
+
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.
