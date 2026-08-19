@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.3
+
+BloomMD 0.5.3 is a maintenance release for the public desktop beta.
+
+- Fix Obsidian review blockers by keeping workspace leaves in their user-selected locations during unload.
+- Replace the browser confirmation with Obsidian's native branch-delete confirmation dialog.
+- Use Obsidian's supported command naming and declarative settings APIs.
+- Raise the minimum Obsidian version to 1.13.0 for the APIs used by the plugin.
+- Bundle React 18 to avoid dynamic script resource injection in the plugin bundle.
+- Keep node editing, Markdown round-tripping, and local-only processing unchanged.
+
 ## 0.5.2
 
 - Add a visible Node title field to the inspector so newly created nodes can be named directly.

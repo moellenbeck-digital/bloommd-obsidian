@@ -44,4 +44,13 @@ private Markdown. Review the diff in the public checkout before committing and t
 - Title changes use the existing conflict-safe Markdown roundtrip and preserve node content and metadata.
 - The exact `0.5.2` tag is used; earlier release tags remain immutable.
 
+## 0.5.3 patch evidence
+
+- Fixes Issue #193: Obsidian community-directory review blockers are addressed.
+- Leaves are no longer detached from their user-selected workspace locations during plugin unload.
+- Uses Obsidian's native `ConfirmationModal`, command naming rules, declarative settings API, and `await`ed workspace navigation.
+- Raises `minAppVersion` to `1.13.0`, which is the minimum for the APIs used by this release.
+- React 18 removes the three dynamic script creations previously detected in the bundled `main.js`.
+- The exact `0.5.3` tag must be used; earlier release tags remain immutable.
+
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

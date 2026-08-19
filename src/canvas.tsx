@@ -625,15 +625,19 @@ function Inspector({
 
   const commitTextMetadata = useCallback((field: "url" | "previewTitle" | "previewDescription" | "previewImage" | "file" | "targetNodeId" | "citation", value: string) => {
     if (!metadataDraft) return;
-    const next = { ...metadataDraft, [field]: value.trim() || undefined } as MarkdownNodeMetadata;
+    const next = { ...metadataDraft, [field]: value.trim() || undefined };
     void saveMetadata(next);
   }, [metadataDraft, saveMetadata]);
 
   const commitEnumMetadata = useCallback((field: "status" | "decision", value: string) => {
     if (!metadataDraft) return;
-    const next = { ...metadataDraft, [field]: value } as MarkdownNodeMetadata;
+    const next = { ...metadataDraft, [field]: value };
     void saveMetadata(next);
   }, [metadataDraft, saveMetadata]);
+
+  const websiteUrl = metadataDraft?.url;
+  const portalFile = metadataDraft?.file;
+  const resourceFile = metadataDraft?.file;
 
   const mediaLinks = external.filter((link) => {
     const kind = externalResourceKind(link.url);
@@ -715,7 +719,7 @@ function Inspector({
           <textarea id="bloommd-preview-description" defaultValue={metadataDraft.previewDescription ?? ""} placeholder="Short description shown in presentation mode" onBlur={(event) => commitTextMetadata("previewDescription", event.target.value)} />
           <label className="bloommd-editor-label" htmlFor="bloommd-preview-image">Preview image URL</label>
           <input id="bloommd-preview-image" type="url" defaultValue={metadataDraft.previewImage ?? ""} placeholder="https://example.com/preview.png" onBlur={(event) => commitTextMetadata("previewImage", event.target.value)} />
-          {metadataDraft.url && <button type="button" className="bloommd-secondary-button" onClick={() => onOpenExternal(metadataDraft.url!)}><Globe2 size={15} />Open website</button>}
+          {websiteUrl && <button type="button" className="bloommd-secondary-button" onClick={() => onOpenExternal(websiteUrl)}><Globe2 size={15} />Open website</button>}
           {metadataDraft.kind === "source" && (
             <>
               <label className="bloommd-editor-label" htmlFor="bloommd-citation">Citation</label>
@@ -735,7 +739,7 @@ function Inspector({
           </select>
           <label className="bloommd-editor-label" htmlFor="bloommd-portal-node">Target node ID (optional)</label>
           <input id="bloommd-portal-node" defaultValue={metadataDraft.targetNodeId ?? ""} placeholder="Open the map root" onBlur={(event) => commitTextMetadata("targetNodeId", event.target.value)} />
-          {metadataDraft.file && <button type="button" className="bloommd-secondary-button" onClick={() => onOpenFile(metadataDraft.file!)}><MapIcon size={15} />Open map</button>}
+          {portalFile && <button type="button" className="bloommd-secondary-button" onClick={() => onOpenFile(portalFile)}><MapIcon size={15} />Open map</button>}
         </section>
       )}
 
@@ -747,7 +751,7 @@ function Inspector({
             <option value="">Select a vault file</option>
             {resourceOptions.map((resource) => <option key={resource.path} value={resource.path}>{resource.path}</option>)}
           </select>
-          {metadataDraft.file && <button type="button" className="bloommd-secondary-button" onClick={() => onOpenFile(metadataDraft.file!)}><FileText size={15} />Open file</button>}
+          {resourceFile && <button type="button" className="bloommd-secondary-button" onClick={() => onOpenFile(resourceFile)}><FileText size={15} />Open file</button>}
         </section>
       )}
 
@@ -958,28 +962,33 @@ function PresentationMode({
 }) {
   if (!heading) return <div className="bloommd-empty-state"><Presentation size={32} /><h3>No section selected</h3><p>Select a heading in the map or outline first.</p></div>;
   const links = externalLinks(heading.content);
+  const metadata = heading.metadata;
+  const webResource = metadata && (metadata.kind === "web" || metadata.kind === "source") && metadata.url ? metadata : null;
+  const fileResource = metadata && (metadata.kind === "portal" || metadata.kind === "file" || metadata.kind === "pdf") && metadata.file ? metadata : null;
+  const webResourceUrl = webResource?.url;
+  const fileResourcePath = fileResource?.file;
   return (
     <section className="bloommd-presentation-mode" aria-label="Presentation mode">
       <div className="bloommd-presentation-content">
         <span className="bloommd-presentation-kicker">H{heading.level} · {index + 1}/{total}</span>
         <h1>{heading.title}</h1>
-        {heading.metadata && heading.metadata.kind !== "topic" && (
-          <div className="bloommd-presentation-type"><NodeKindIcon kind={heading.metadata.kind} /> {nodeKindLabel(heading.metadata.kind)}</div>
+        {metadata && metadata.kind !== "topic" && (
+          <div className="bloommd-presentation-type"><NodeKindIcon kind={metadata.kind} /> {nodeKindLabel(metadata.kind)}</div>
         )}
-        {(heading.metadata?.kind === "web" || heading.metadata?.kind === "source") && heading.metadata.url && (
+        {webResource && webResourceUrl && (
           <article className="bloommd-presentation-resource-card">
-            {heading.metadata.previewImage && <img src={heading.metadata.previewImage} alt={heading.metadata.previewTitle || heading.title} loading="lazy" referrerPolicy="no-referrer" />}
-            <div><strong>{heading.metadata.previewTitle || heading.title}</strong><small>{heading.metadata.previewDescription || heading.metadata.url}</small></div>
-            <button type="button" className="bloommd-secondary-button" onClick={() => onOpenExternal(heading.metadata!.url!)}><ExternalLink size={15} />Open resource</button>
+            {webResource.previewImage && <img src={webResource.previewImage} alt={webResource.previewTitle || heading.title} loading="lazy" referrerPolicy="no-referrer" />}
+            <div><strong>{webResource.previewTitle || heading.title}</strong><small>{webResource.previewDescription || webResourceUrl}</small></div>
+            <button type="button" className="bloommd-secondary-button" onClick={() => onOpenExternal(webResourceUrl)}><ExternalLink size={15} />Open resource</button>
           </article>
         )}
-        {(heading.metadata?.kind === "portal" || heading.metadata?.kind === "file" || heading.metadata?.kind === "pdf") && heading.metadata.file && (
-          <button type="button" className="bloommd-presentation-resource-card" onClick={() => onOpenFile(heading.metadata!.file!)}>
-            <NodeKindIcon kind={heading.metadata.kind} /><span><strong>{heading.metadata.file}</strong><small>Open from this vault</small></span><ExternalLink size={15} />
+        {fileResource && fileResourcePath && (
+          <button type="button" className="bloommd-presentation-resource-card" onClick={() => onOpenFile(fileResourcePath)}>
+            <NodeKindIcon kind={fileResource.kind} /><span><strong>{fileResourcePath}</strong><small>Open from this vault</small></span><ExternalLink size={15} />
           </button>
         )}
-        {heading.metadata?.kind === "task" && <div className="bloommd-presentation-status">Task: {heading.metadata.status ?? "open"}</div>}
-        {heading.metadata?.kind === "decision" && <div className="bloommd-presentation-status">Decision: {heading.metadata.decision ?? "proposed"}</div>}
+        {metadata?.kind === "task" && <div className="bloommd-presentation-status">Task: {metadata.status ?? "open"}</div>}
+        {metadata?.kind === "decision" && <div className="bloommd-presentation-status">Decision: {metadata.decision ?? "proposed"}</div>}
         {heading.content && <p>{heading.content}</p>}
         {links.length > 0 && (
           <div className="bloommd-presentation-resources">
@@ -1130,7 +1139,12 @@ function CanvasInner(props: CanvasProps) {
       }));
     const edges: Edge[] = props.headings
       .filter((heading) => heading.parentId && visibleIds.has(heading.id) && visibleIds.has(heading.parentId))
-      .map((heading) => ({ id: `${heading.parentId}-${heading.id}`, source: heading.parentId!, target: heading.id, type: "bloommd" }));
+      .flatMap((heading) => {
+        const parentId = heading.parentId;
+        return parentId
+          ? [{ id: `${parentId}-${heading.id}`, source: parentId, target: heading.id, type: "bloommd" }]
+          : [];
+      });
     return { nodes, edges };
   }, [addChild, collapsed, headingsById, props.actions, props.headings, props.layout.positions, props.showNodeContent, run, selectNode, toggleCollapse, visibleIds]);
 
@@ -1428,7 +1442,7 @@ function CanvasInner(props: CanvasProps) {
             }}
             onConnect={(connection: Connection) => {
               if (!connection.source || !connection.target || connection.source === connection.target) return;
-              void run(() => props.actions.reparentBranch(connection.target!, connection.source!));
+              void run(() => props.actions.reparentBranch(connection.target, connection.source));
             }}
             isValidConnection={(connection) => Boolean(connection.source && connection.target && connection.source !== connection.target && connection.target !== props.rootId)}
             defaultViewport={props.layout.viewport ?? { x: 30, y: 30, zoom: 0.9 }}

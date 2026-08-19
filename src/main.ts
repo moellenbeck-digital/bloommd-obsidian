@@ -1,5 +1,6 @@
 import {
   App,
+  ConfirmationModal,
   FileSystemAdapter,
   ItemView,
   MarkdownView,
@@ -7,10 +8,10 @@ import {
   Plugin,
   PluginSettingTab,
   Platform,
-  Setting,
   TFile,
   TFolder,
   WorkspaceLeaf,
+  type SettingDefinitionItem,
 } from "obsidian";
 import {
   addChildHeading,
@@ -20,7 +21,6 @@ import {
   ensureHeadingIds,
   findHeading,
   findHeadingParent,
-  flattenHeadings,
   metadataEquals,
   moveHeadingBranch,
   parseHeadingTree,
@@ -62,6 +62,31 @@ const DEFAULT_SETTINGS: BloomMDSettings = {
 };
 
 const EMPTY_LAYOUT: PersistedCanvasLayout = { positions: {}, collapsed: [] };
+
+function confirmDelete(app: App, title: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    new ConfirmationModal(app)
+      .setTitle("Delete branch?")
+      .setContent(`Delete "${title}" and its complete branch?`)
+      .addButton((button) => {
+        button
+          .setButtonText("Delete branch")
+          .setDestructive()
+          .setCta()
+          .onClick(() => finish(true));
+      })
+      .addCancelButton("Cancel")
+      .setCloseCallback(() => finish(false))
+      .open();
+  });
+}
 
 function canvasHeadings(nodes: MarkdownHeadingNode[]): CanvasHeading[] {
   const result: CanvasHeading[] = [];
@@ -365,7 +390,7 @@ class BloomMDView extends ItemView {
           if (!editable) return false;
           const node = this.headings.find((heading) => heading.id === id);
           if (!node) return false;
-          if (!window.confirm(`Delete "${node.title}" and its complete branch?`)) return false;
+          if (!(await confirmDelete(this.app, node.title))) return false;
           return this.applyMutation((markdown) => deleteHeadingBranch(markdown, id));
         },
         reparentBranch: (id, parentId) => {
@@ -420,9 +445,9 @@ export default class BloomMDPlugin extends Plugin {
     await this.loadSettings();
     this.registerView(VIEW_TYPE_BLOOMMD, (leaf) => new BloomMDView(leaf, this));
 
-    this.addRibbonIcon("git-branch", "BloomMD: Visualize current note", () => void this.visualizeCurrentNote());
+    this.addRibbonIcon("git-branch", "Visualize current note", () => void this.visualizeCurrentNote());
     this.addCommand({ id: "visualize-current-note", name: "Visualize current note", callback: () => void this.visualizeCurrentNote() });
-    this.addCommand({ id: "open-current-note-in-bloommd", name: "Open current note in BloomMD", callback: () => void this.openCurrentNoteInBloomMD() });
+    this.addCommand({ id: "open-current-note", name: "Open current note", callback: () => void this.openCurrentNoteInBloomMD() });
     this.addCommand({ id: "visualize-current-folder", name: "Visualize current folder", callback: () => void this.visualizeCurrentFolder() });
 
     this.registerEvent(this.app.vault.on("modify", (file) => {
@@ -435,9 +460,13 @@ export default class BloomMDPlugin extends Plugin {
   }
 
   onunload() {
-    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
-    void this.persistData();
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_BLOOMMD);
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    void this.persistData().catch((error: unknown) => {
+      console.error("BloomMD: failed to persist plugin data during unload", error);
+    });
   }
 
   async visualizeCurrentNote() {
@@ -448,14 +477,14 @@ export default class BloomMDPlugin extends Plugin {
     }
     const view = await this.getOrCreateView();
     await this.loadFileIntoView(file.path, view);
-    this.app.workspace.revealLeaf(view.leaf);
+    await this.app.workspace.revealLeaf(view.leaf);
   }
 
   async visualizeCurrentFolder() {
     const folder = this.getActiveMarkdownFile()?.parent ?? this.app.vault.getRoot();
     const view = await this.getOrCreateView();
     view.setFolder(folder);
-    this.app.workspace.revealLeaf(view.leaf);
+    await this.app.workspace.revealLeaf(view.leaf);
   }
 
   async loadFileIntoView(path: string, view: BloomMDView) {
@@ -468,7 +497,7 @@ export default class BloomMDPlugin extends Plugin {
   async openMarkdownFile(file: TFile) {
     const existing = this.app.workspace.getLeavesOfType("markdown").find((leaf) => leaf.view instanceof MarkdownView && leaf.view.file?.path === file.path);
     if (existing) {
-      this.app.workspace.revealLeaf(existing);
+      await this.app.workspace.revealLeaf(existing);
       return;
     }
     await this.app.workspace.getLeaf("tab").openFile(file);
@@ -571,29 +600,42 @@ class BloomMDSettingTab extends PluginSettingTab {
     super(app, plugin);
   }
 
-  display(): void {
-    this.containerEl.empty();
-    this.containerEl.createEl("h2", { text: "BloomMD" });
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [{
+      type: "group",
+      heading: "BloomMD",
+      items: [
+        {
+          name: "Open in BloomMD",
+          desc: "Desktop opens the local file on macOS. Web opens the private local-file demo without uploading note content.",
+          control: {
+            type: "dropdown",
+            key: "openTarget",
+            defaultValue: "desktop",
+            options: { desktop: "Desktop app", web: "Web app" },
+          },
+        },
+        {
+          name: "Show content previews",
+          desc: "Show a short local Markdown preview inside each mind-map node.",
+          control: { type: "toggle", key: "showNodeContent", defaultValue: true },
+        },
+      ],
+    }];
+  }
 
-    new Setting(this.containerEl)
-      .setName("Open in BloomMD")
-      .setDesc("Desktop opens the local file on macOS. Web opens the private local-file demo without uploading note content.")
-      .addDropdown((dropdown) => dropdown
-        .addOption("desktop", "Desktop app")
-        .addOption("web", "Web app")
-        .setValue(this.plugin.settings.openTarget)
-        .onChange(async (value) => {
-        this.plugin.settings.openTarget = value === "web" ? "web" : "desktop";
-        await this.plugin.saveSettings();
-      }));
+  getControlValue(key: string): unknown {
+    if (key === "openTarget") return this.plugin.settings.openTarget;
+    if (key === "showNodeContent") return this.plugin.settings.showNodeContent;
+    return undefined;
+  }
 
-    new Setting(this.containerEl)
-      .setName("Show content previews")
-      .setDesc("Show a short local Markdown preview inside each mind-map node.")
-      .addToggle((toggle) => toggle.setValue(this.plugin.settings.showNodeContent).onChange(async (value) => {
-        this.plugin.settings.showNodeContent = value;
-        await this.plugin.saveSettings();
-      }));
-
+  setControlValue(key: string, value: unknown): Promise<void> {
+    if (key === "openTarget" && (value === "desktop" || value === "web")) {
+      this.plugin.settings.openTarget = value;
+    } else if (key === "showNodeContent" && typeof value === "boolean") {
+      this.plugin.settings.showNodeContent = value;
+    }
+    return this.plugin.saveSettings();
   }
 }

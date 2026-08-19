@@ -1,8 +1,8 @@
 {
   "id": "bloommd",
   "name": "BloomMD",
-  "version": "0.5.2",
-  "minAppVersion": "1.6.0",
+  "version": "0.5.3",
+  "minAppVersion": "1.13.0",
   "description": "Visualize your Markdown notes as interactive mind maps while keeping Markdown as the source of truth.",
   "author": "BloomMD",
   "authorUrl": "https://bloommd.io",
