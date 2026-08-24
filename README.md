@@ -95,7 +95,7 @@ The public product direction is documented on <https://bloommd.io>: local-first 
 
 This plugin follows that roadmap as the Obsidian companion layer. Local `TODO` files are not used as a separate source of truth, and this README intentionally avoids linking to private or restricted GitHub project boards.
 
-## Development
+## Release verification
 
 ```bash
 bun install
@@ -105,7 +105,7 @@ bun run build
 bun run release:verify
 ```
 
-The Markdown engine is covered by unit tests for CommonMark edge cases, including Setext headings, fenced and indented code, HTML blocks, unterminated frontmatter, ATX closing sequences, and heading-depth limits. See [RELEASE.md](RELEASE.md) for the release process.
+This checkout is a public release mirror. Development changes belong in the [BloomMD monorepo](https://github.com/moellenbeck-digital/BloomMD); the commands above verify a generated public snapshot. The Markdown engine is covered by unit tests for CommonMark edge cases, including Setext headings, fenced and indented code, HTML blocks, unterminated frontmatter, ATX closing sequences, and heading-depth limits. See [RELEASE.md](RELEASE.md) for the release process.
 
 ## Links
 

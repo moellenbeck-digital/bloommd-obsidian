@@ -26,6 +26,8 @@ jobs:
       - run: bun run test
       - run: bun run build
       - run: bun run release:verify
+        env:
+          BLOOMMD_REQUIRE_CLEAN_MIRROR: "1"
       - name: Verify exact version tag
         run: test "${GITHUB_REF_NAME}" = "$(node -p "require('./manifest.json').version")"
       - uses: softprops/action-gh-release@v2

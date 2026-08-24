@@ -1,3 +1,15 @@
+/**
+ * GENERATED FILE — DO NOT EDIT.
+ *
+ * This standalone release snapshot is generated from
+ * packages/core/src/obsidian-markdown.ts by the BloomMD mirror sync.
+ * Source SHA-256: 7566a15edbffb6fbb8281421b7387d1a4a89446c8cfd8768136fe9eb4617e5be
+ */
+import type { MindMapNodeKind, MindMapNodeMetadata } from "./core-types";
+
+export type MarkdownNodeKind = Exclude<MindMapNodeKind, "workspace" | "folder">;
+export type MarkdownNodeMetadata = Omit<MindMapNodeMetadata, "kind"> & { kind: MarkdownNodeKind };
+
 export interface MarkdownHeadingNode {
   id: string;
   level: number;
@@ -13,29 +25,6 @@ export interface MarkdownHeadingNode {
   contentEndLine: number;
   sectionEndLine: number;
   indent: string;
-}
-
-export type MarkdownNodeKind =
-  | "topic"
-  | "portal"
-  | "web"
-  | "file"
-  | "pdf"
-  | "source"
-  | "task"
-  | "decision";
-
-export interface MarkdownNodeMetadata {
-  kind: MarkdownNodeKind;
-  url?: string;
-  previewTitle?: string;
-  previewDescription?: string;
-  previewImage?: string;
-  file?: string;
-  targetNodeId?: string;
-  citation?: string;
-  status?: "open" | "in_progress" | "done";
-  decision?: "proposed" | "accepted" | "rejected";
 }
 
 interface ParsedLine {
@@ -68,7 +57,7 @@ const HTML_RAW_TAGS = new Set(["script", "pre", "style", "textarea"]);
  */
 function stripClosingSequence(title: string): string {
   const closed = /^(.*?)\s+#+\s*$/.exec(title);
-  if (closed) return closed[1];
+  if (closed) return closed[1] ?? "";
   return /^#+$/.test(title.trim()) ? "" : title;
 }
 
@@ -132,7 +121,7 @@ function splitMarkdown(markdown: string): MarkdownLines {
 function frontmatterEndLine(lines: string[]): number {
   if (lines[0]?.trim() !== "---") return -1;
   for (let index = 1; index < lines.length; index += 1) {
-    const trimmed = lines[index].trim();
+    const trimmed = lines[index]?.trim() ?? "";
     if (trimmed === "---" || trimmed === "...") return index;
   }
   return -1;
@@ -206,9 +195,9 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
         line: index,
         endLine: index,
         style: "atx",
-        level: atx[2].length,
+        level: atx[2]!.length,
         title: stripBloomMetadata(rawTitle),
-        indent: atx[1],
+        indent: atx[1] ?? "",
         persistedId: extractBloomId(rawTitle),
         metadata: parseNodeMetadata(rawTitle),
       });
@@ -219,13 +208,13 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
     // A Setext underline turns the preceding paragraph line into a heading.
     const underline = /^ {0,3}(=+|-+)\s*$/.exec(line);
     if (underline && setextCandidate !== null) {
-      const titleLine = lines[setextCandidate];
+      const titleLine = lines[setextCandidate] ?? "";
       const rawTitle = titleLine.trim();
       headings.push({
         line: setextCandidate,
         endLine: index,
         style: "setext",
-        level: underline[1].startsWith("=") ? 1 : 2,
+        level: underline[1]!.startsWith("=") ? 1 : 2,
         title: stripBloomMetadata(rawTitle),
         indent: /^( {0,3})/.exec(titleLine)?.[1] ?? "",
         persistedId: extractBloomId(rawTitle),
@@ -271,7 +260,7 @@ export function parseHeadingTree(markdown: string): MarkdownHeadingNode[] {
     };
     seenIds.add(node.id);
 
-    while (stack.length > 0 && stack[stack.length - 1].level >= node.level) {
+    while (stack.length > 0 && (stack[stack.length - 1]?.level ?? 0) >= node.level) {
       stack.pop();
     }
 
@@ -301,7 +290,7 @@ export function ensureHeadingIds(markdown: string): { markdown: string; changed:
     seen.add(id);
     // Existing id comments are replaced rather than appended. A heading duplicated in the editor
     // carries a stale id, and appending would grow the line by one comment on every single open.
-    const withoutIds = lines[heading.line].replace(/\s*<!--\s*bloommd:id=[\s\S]*?-->/gi, "");
+    const withoutIds = (lines[heading.line] ?? "").replace(/\s*<!--\s*bloommd:id=[\s\S]*?-->/gi, "");
     lines[heading.line] = `${withoutIds.trimEnd()} <!-- bloommd:id=${id} -->`;
     changed = true;
   });

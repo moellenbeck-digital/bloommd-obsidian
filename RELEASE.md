@@ -4,7 +4,23 @@ Obsidian expects `manifest.json`, `README.md`, the license, and the optional `ic
 
 ## Repository topology
 
-The plugin ships from the public repository `moellenbeck-digital/bloommd-obsidian`, whose root is a mirror of `plugins/obsidian` in the private BloomMD monorepo. The nested `.github/workflows/release.yml` is active there.
+The BloomMD monorepo is the only development source. The plugin imports the shared Markdown
+contract from `@bloommd/core/browser`; Obsidian-specific Vault, View, settings, and UI code stays in
+`plugins/obsidian`.
+
+The plugin ships from the public repository `moellenbeck-digital/bloommd-obsidian`. That repository
+is a release/distribution mirror, not a second development home. Its source tree is deliberately
+self-contained because the public repository is built independently by GitHub Actions. During a
+mirror sync, these generated files are created from the canonical Core sources:
+
+- `src/markdown-document.ts` — standalone snapshot of `packages/core/src/obsidian-markdown.ts`;
+- `src/core-types.ts` — standalone snapshot of `packages/core/src/types.ts`;
+- `MIRROR.json` — source commit, version, and SHA-256 evidence for both snapshots.
+
+The public package removes the monorepo-only `@bloommd/core: workspace:*` dependency. It must never
+be edited by hand. `bun.lock`, `main.js`, `styles.css`, and `release/<version>/` in the public
+checkout are release/build artifacts; the root `bun.lock` remains authoritative for monorepo work.
+The nested plugin lockfile and generated bundles are intentionally not tracked in the monorepo.
 
 From the BloomMD monorepo, mirror the plugin into a checkout of the public repository:
 
@@ -12,18 +28,57 @@ From the BloomMD monorepo, mirror the plugin into a checkout of the public repos
 scripts/sync-obsidian-repo.sh ../bloommd-obsidian
 ```
 
-The script excludes `node_modules/`, `release/` and build scratch, and never copies test vaults or
-private Markdown. Review the diff in the public checkout before committing and tagging.
+The script copies the canonical source/docs/assets, generates the standalone Core snapshots,
+reinstalls the public lockfile, builds the release bundle, and runs the release contract. It
+excludes `node_modules/`, `release/` and build scratch, and never copies test vaults or private
+Markdown. Review the diff in the public checkout before committing and tagging.
+
+To detect drift without changing the public checkout:
+
+```bash
+scripts/sync-obsidian-repo.sh --check ../bloommd-obsidian
+```
+
+The check compares the canonical plugin inputs, generated Core snapshots, package normalization,
+and `MIRROR.json`, then runs the public release contract. A release must be synchronized from a
+clean monorepo commit; the GitHub workflow rejects a mirror generated from a dirty checkout.
+
+## Future release flow
+
+1. Implement and review plugin/Core changes in `moellenbeck-digital/BloomMD` only.
+2. Keep the plugin package version, `manifest.json`, `versions.json`, and `CHANGELOG.md` aligned.
+3. Run the Core and plugin tests/typechecks in the monorepo and commit the complete source change.
+4. Run `scripts/sync-obsidian-repo.sh ../bloommd-obsidian` from that commit.
+5. Review the generated public diff, including `MIRROR.json` and the generated bundle.
+6. Commit the public mirror, create the exact version tag without a `v` prefix, and let the public
+   workflow run audit, typecheck, tests, build, hash validation, and release publication.
+7. Verify the GitHub release assets and perform the clean-vault/BRAT smoke test.
+
+The public release then has an unambiguous chain: plugin SemVer → public mirror commit/tag →
+`MIRROR.json` source Git-SHA and Core SHA-256 → generated release assets. A change made only in the
+public repository is intentionally not part of the development workflow and is detected by the
+next mirror check.
+
+## Deliberate release differences
+
+- The canonical monorepo uses React 19. The standalone public package is normalized to React 18.3,
+  matching the reviewed 0.5.4 release line and avoiding the dynamic script resources previously
+  detected in Obsidian's plugin review. This is a packaging constraint, not a second implementation.
+- The public package has no `@bloommd/core: workspace:*` dependency. Its generated files are the
+  exact Core snapshot recorded by `MIRROR.json`.
+- The plugin remains desktop-only and keeps its Obsidian-specific Vault/View/settings boundary;
+  mobile support and platform-specific behavior are not inferred from the shared Core.
 
 ## Release checklist
 
-1. Update `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md` to the same version.
-2. Run `bun install --frozen-lockfile`.
-3. Run `bun run typecheck`, `bun run test`, and `bun run release:package`.
-4. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
-5. Push the dedicated repository and create an exact version tag such as `0.5.0`.
-6. Verify the GitHub release contains `manifest.json`, `main.js`, `styles.css`, and `icon.png`.
-7. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
+1. Update `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md` to the same version in the monorepo.
+2. Run the monorepo Core/plugin tests and typechecks from the committed source.
+3. Run the mirror sync and review the generated public diff.
+4. Run `bun install --frozen-lockfile`, `bun run typecheck`, `bun run test`, and `bun run release:package` in the public checkout.
+5. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
+6. Push the dedicated repository and create an exact version tag such as `0.5.0`.
+7. Verify the GitHub release contains `manifest.json`, `main.js`, `styles.css`, and `icon.png`.
+8. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
 
 ## 0.5.0 public beta evidence
 

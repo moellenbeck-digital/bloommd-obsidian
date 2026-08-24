@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "mode": "release-mirror",
+  "canonicalRepository": "moellenbeck-digital/BloomMD",
+  "canonicalPath": "plugins/obsidian",
+  "sourceCommit": "07fec3d08410cdc22d587a4ba30c9abd0b89ab27",
+  "sourceDirty": false,
+  "sourceManifestSha256": "9cfd6175d527c0368bda52648401cdaed2ee3522a82a931987ce57f7ab395daa",
+  "pluginVersion": "0.5.4",
+  "core": {
+    "sourcePath": "packages/core/src/obsidian-markdown.ts",
+    "sourceSha256": "7566a15edbffb6fbb8281421b7387d1a4a89446c8cfd8768136fe9eb4617e5be",
+    "generatedPath": "src/markdown-document.ts",
+    "generatedSha256": "5ab4b8d60f3eb549e17d03a444f43a4edaf7e5539ec8809ed0cbbd892e596af6"
+  },
+  "coreTypes": {
+    "sourcePath": "packages/core/src/types.ts",
+    "sourceSha256": "b388139887ca53b5b39d78c302f51ae2098b67e1ecc694dde2b1fb8593789e08",
+    "generatedPath": "src/core-types.ts",
+    "generatedSha256": "9d8d0cedc6c29c9f6ab0cca3bee7689746490353c8d37ce0c983c74157b561c0"
+  }
+}
