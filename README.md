@@ -1,5 +1,10 @@
 # BloomMD for Obsidian
 
+> [!IMPORTANT]
+> **Public release mirror — read-only for development.**
+>
+> The authoritative source code and development work live in the [BloomMD monorepo](https://github.com/moellenbeck-digital/BloomMD). This repository exists for public Obsidian release artifacts and distribution through BRAT. Please do not open issues or pull requests here; report feedback through the BloomMD beta channels.
+
 **See an Obsidian note as an editable Markdown map, without moving your files into a new format.**
 
 BloomMD turns Markdown structure into a visual workspace. In Obsidian, this plugin maps the note or folder you already have, lets you work with headings as nodes, and writes structural edits back to normal `.md` files.
