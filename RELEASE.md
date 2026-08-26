@@ -114,4 +114,12 @@ next mirror check.
 - The icon is packaged and attached to the GitHub release together with the standard plugin assets.
 - The exact `0.5.4` tag must be used; earlier release tags remain immutable.
 
+## 0.5.5 maintenance release evidence
+
+- Version is synchronized across `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md`.
+- The plugin uses the canonical `@bloommd/core/browser` Markdown contract through the monorepo source and generated public mirror snapshot.
+- The public mirror records the source commit and Core snapshot hashes in `MIRROR.json`.
+- Core/plugin typechecks, tests, build, release verification, clean-vault QA, and the BRAT smoke test must pass before publication.
+- The exact `0.5.5` tag must be used; earlier release tags remain immutable.
+
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

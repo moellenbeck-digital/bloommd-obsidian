@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.5
+
+BloomMD 0.5.5 is a maintenance release that aligns the plugin with the canonical BloomMD Markdown contract.
+
+- Use the shared, browser-safe Markdown parser and structural operations from `@bloommd/core/browser`.
+- Keep CommonMark- and Obsidian-compatible round-tripping for frontmatter, Setext headings, fenced and indented code, HTML blocks, CRLF files, links, stable IDs, and node metadata.
+- Keep branch moves, copies, renames, sibling/child creation, deletion, and content edits on the same lossless Markdown operations used by the BloomMD workspace.
+- Publish the plugin from the reproducible monorepo-to-mirror release path with source and Core hash evidence.
+- Keep the plugin local-only, desktop-only, and free of telemetry or vault uploads.
+
 ## 0.5.4
 
 BloomMD 0.5.4 is a small public beta patch for the Obsidian Community Directory.
