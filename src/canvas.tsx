@@ -617,9 +617,9 @@ function Inspector({
   }, [metadataBaseline, onSaveMetadata]);
 
   const changeKind = useCallback((kind: MarkdownNodeKind) => {
-    const next = kind === "topic"
+    const next: MarkdownNodeMetadata | undefined = kind === "topic"
       ? undefined
-      : { ...(metadataDraft?.kind === "topic" ? {} : metadataDraft), kind } as MarkdownNodeMetadata;
+      : { ...(metadataDraft?.kind === "topic" ? {} : metadataDraft), kind };
     void saveMetadata(next);
   }, [metadataDraft, saveMetadata]);
 
@@ -1244,8 +1244,8 @@ function CanvasInner(props: CanvasProps) {
   }, [copiedBranchIds, headingsById, props.actions, run, selectedId]);
 
   const handleKeyboard = useCallback((event: KeyboardEvent) => {
-    const target = event.target as HTMLElement | null;
-    if (!target || !shellRef.current?.contains(target)) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !shellRef.current?.contains(target)) return;
     const inTextField = Boolean(target.closest("input, textarea, [contenteditable='true']"));
     const primary = event.metaKey || event.ctrlKey;
 

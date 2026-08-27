@@ -1,6 +1,6 @@
 # Obsidian Release Process
 
-Obsidian expects `manifest.json`, `README.md`, the license, and the optional `icon.png` at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix, and each GitHub release must attach `manifest.json`, `main.js`, `styles.css`, and `icon.png`.
+Obsidian expects `manifest.json`, `README.md`, the license, and the optional `icon.png` at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix. GitHub releases attach only the supported plugin bundle files: `manifest.json`, `main.js`, and `styles.css`; `icon.png` stays at the repository root for directory branding.
 
 ## Repository topology
 
@@ -77,7 +77,7 @@ next mirror check.
 4. Run `bun install --frozen-lockfile`, `bun run typecheck`, `bun run test`, and `bun run release:package` in the public checkout.
 5. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
 6. Push the dedicated repository and create an exact version tag such as `0.5.0`.
-7. Verify the GitHub release contains `manifest.json`, `main.js`, `styles.css`, and `icon.png`.
+7. Verify the GitHub release contains `manifest.json`, `main.js`, and `styles.css`, and verify `icon.png` remains at the repository root.
 8. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
 
 ## 0.5.0 public beta evidence
@@ -121,5 +121,13 @@ next mirror check.
 - The public mirror records the source commit and Core snapshot hashes in `MIRROR.json`.
 - Core/plugin typechecks, tests, build, release verification, clean-vault QA, and the BRAT smoke test must pass before publication.
 - The exact `0.5.5` tag must be used; earlier release tags remain immutable.
+
+## 0.5.6 review hardening evidence
+
+- Current-folder and resource listings traverse only the active/selected folder tree; the plugin no longer calls full-vault `getMarkdownFiles()` or `getFiles()` APIs.
+- The release workflow requests GitHub OIDC attestations and signs `manifest.json`, `main.js`, and `styles.css` before publishing them.
+- `icon.png` remains available at the repository root but is no longer attached as an extra GitHub release asset.
+- The plugin source avoids the two unnecessary assertions reported by the Obsidian review.
+- The exact `0.5.6` tag must be used; earlier release tags remain immutable.
 
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

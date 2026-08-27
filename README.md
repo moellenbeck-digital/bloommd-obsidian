@@ -1,9 +1,9 @@
 # BloomMD for Obsidian
 
 > [!IMPORTANT]
-> **Public release mirror — read-only for development.**
+> **Public release mirror — implementation changes are maintained in the monorepo.**
 >
-> The authoritative source code and development work live in the [BloomMD monorepo](https://github.com/moellenbeck-digital/BloomMD). This repository exists for public Obsidian release artifacts and distribution through BRAT. Please do not open issues or pull requests here; report feedback through the BloomMD beta channels.
+> The authoritative source code and development work live in the [BloomMD monorepo](https://github.com/moellenbeck-digital/BloomMD). This repository exists for public Obsidian release artifacts and distribution through BRAT. Use [Issues](https://github.com/moellenbeck-digital/bloommd-obsidian/issues) for user-facing plugin bugs and compatibility reports; implementation pull requests belong in the monorepo.
 
 **See an Obsidian note as an editable Markdown map, without moving your files into a new format.**
 
@@ -80,11 +80,8 @@ BRAT keeps the plugin updated as beta releases are tagged.
 
 ## Feedback And Issues
 
-GitHub issue creation may be restricted while the plugin is in beta review and while the public repository mirrors the internal BloomMD development workspace.
+Use [GitHub Issues](https://github.com/moellenbeck-digital/bloommd-obsidian/issues) for plugin bugs and compatibility reports. Use the beta and contact channels linked from <https://bloommd.io> for product feedback, feature requests, and private reports.
 
-For now:
-
-- Use the beta and contact channels linked from <https://bloommd.io> for bugs, feedback, and feature requests.
 - Include your Obsidian version, BloomMD plugin version, operating system, and a minimal Markdown example when reporting rendering or editing problems.
 - Do not attach private vault content.
 - Use [SECURITY.md](SECURITY.md) for vulnerability reports.

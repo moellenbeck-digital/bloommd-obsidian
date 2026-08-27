@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.6
+
+BloomMD 0.5.6 hardens the public beta against Obsidian Community review findings.
+
+- Limit Markdown and resource listings to the active note's folder tree instead of enumerating the entire vault.
+- Remove the two unnecessary type assertions reported by the review.
+- Add GitHub artifact provenance attestations for the supported release assets.
+- Keep `icon.png` in the repository root for branding without attaching it as an unsupported release asset.
+
 ## 0.5.5
 
 BloomMD 0.5.5 is a maintenance release that aligns the plugin with the canonical BloomMD Markdown contract.

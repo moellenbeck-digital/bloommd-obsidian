@@ -4,9 +4,10 @@
 
 - Canonical development source: `moellenbeck-digital/BloomMD/plugins/obsidian`.
 - Public distribution mirror: `moellenbeck-digital/bloommd-obsidian`.
-- The public repository is read-only for development. Do not add implementation changes, issues,
-  or pull requests there; synchronize it from the monorepo.
-- Current synchronized plugin version: `0.5.4`.
+- The public repository is a generated distribution mirror. Do not add implementation changes or
+  pull requests there; user-facing bug reports may be filed as GitHub issues and are implemented in
+  the private monorepo.
+- Current synchronized plugin version: `0.5.6`.
 
 ## Architecture
 
