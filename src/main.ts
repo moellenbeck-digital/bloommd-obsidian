@@ -37,6 +37,7 @@ import {
   type PersistedCanvasLayout,
   type ResourceEntry,
 } from "./canvas";
+import { historyFocusId } from "./history-focus";
 
 const VIEW_TYPE_BLOOMMD = "bloommd-mindmap-view";
 const BLOOMMD_WEB_DEMO = "https://bloommd.io/demo";
@@ -146,8 +147,22 @@ function folderHeadings(folder: TFolder): CanvasHeading[] {
   return result;
 }
 
+function filesInFolder(folder: TFolder | null): TFile[] {
+  if (!folder) return [];
+  const result: TFile[] = [];
+  const walk = (current: TFolder) => {
+    for (const child of current.children) {
+      if (child instanceof TFile) result.push(child);
+      else if (child instanceof TFolder) walk(child);
+    }
+  };
+  walk(folder);
+  return result;
+}
+
 class BloomMDView extends ItemView {
   private sourceFile: TFile | null = null;
+  private scopeFolder: TFolder | null = null;
   private layoutKey = "";
   private headings: CanvasHeading[] = [];
   private rootId = "";
@@ -192,6 +207,7 @@ class BloomMDView extends ItemView {
       this.redoStack = [];
     }
     this.sourceFile = file;
+    this.scopeFolder = file.parent;
     this.layoutKey = `file:${file.path}`;
     this.lastKnownMarkdown = markdown;
     const tree = parseHeadingTree(markdown);
@@ -202,6 +218,7 @@ class BloomMDView extends ItemView {
 
   setFolder(folder: TFolder) {
     this.sourceFile = null;
+    this.scopeFolder = folder;
     this.layoutKey = `folder:${folder.path || "/"}`;
     this.headings = folderHeadings(folder);
     this.rootId = this.headings[0]?.id ?? "";
@@ -233,7 +250,7 @@ class BloomMDView extends ItemView {
     this.renderCanvas();
   }
 
-  private queueMutation(task: () => Promise<boolean>): Promise<boolean> {
+  private queueMutation<T>(task: () => Promise<T>): Promise<T> {
     const pending = this.mutationQueue.then(task, task);
     this.mutationQueue = pending.then(() => undefined, () => undefined);
     return pending;
@@ -265,17 +282,18 @@ class BloomMDView extends ItemView {
     });
   }
 
-  private restoreHistory(direction: "undo" | "redo"): Promise<boolean> {
+  private restoreHistory(direction: "undo" | "redo", selectedId: string | null): Promise<string | null> {
     return this.queueMutation(async () => {
-      if (!this.sourceFile) return false;
+      if (!this.sourceFile) return null;
       const source = direction === "undo" ? this.undoStack : this.redoStack;
       const target = direction === "undo" ? this.redoStack : this.undoStack;
       const entry = source[source.length - 1];
-      if (!entry) return false;
+      if (!entry) return null;
       this.writing = true;
       try {
         const expected = direction === "undo" ? entry.after : entry.before;
         const replacement = direction === "undo" ? entry.before : entry.after;
+        const focusId = historyFocusId(expected, replacement, selectedId);
         const markdown = await this.app.vault.process(this.sourceFile, (current) => {
           if (current !== expected) throw new Error("The note changed outside BloomMD. History restore was cancelled.");
           return replacement;
@@ -283,10 +301,10 @@ class BloomMDView extends ItemView {
         source.pop();
         target.push(entry);
         this.updateFromMarkdown(markdown);
-        return true;
+        return focusId;
       } catch (error) {
         this.showError(error);
-        return false;
+        return null;
       } finally {
         this.writing = false;
       }
@@ -355,13 +373,13 @@ class BloomMDView extends ItemView {
       filePath: sourceFile?.path ?? this.layoutKey,
       headings: this.headings,
       rootId: this.rootId,
-      files: this.plugin.markdownFiles(),
+      files: this.plugin.markdownFiles(this.scopeFolder),
       backlinks: this.backlinks(),
       layout: this.plugin.getLayout(this.layoutKey),
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       showNodeContent: this.plugin.settings.showNodeContent,
-      resources: this.plugin.resourceFiles(),
+      resources: this.plugin.resourceFiles(this.scopeFolder),
       actions: {
         renameNode: (id, title, expectedTitle) => editable
           ? this.applyMutation((markdown) => {
@@ -415,8 +433,8 @@ class BloomMDView extends ItemView {
             markdown,
           ));
         },
-        undo: () => this.restoreHistory("undo"),
-        redo: () => this.restoreHistory("redo"),
+        undo: (selectedId) => this.restoreHistory("undo", selectedId),
+        redo: (selectedId) => this.restoreHistory("redo", selectedId),
         persistLayout: (layout) => this.plugin.saveLayout(this.layoutKey, layout),
         openMarkdown: () => { if (sourceFile) void this.plugin.openMarkdownFile(sourceFile); },
         openBloomMD: () => { if (sourceFile) void this.plugin.openFileInBloomMD(sourceFile); },
@@ -481,7 +499,11 @@ export default class BloomMDPlugin extends Plugin {
   }
 
   async visualizeCurrentFolder() {
-    const folder = this.getActiveMarkdownFile()?.parent ?? this.app.vault.getRoot();
+    const folder = this.getActiveMarkdownFile()?.parent;
+    if (!folder) {
+      new Notice("BloomMD: Open a Markdown note in the folder you want to visualize.");
+      return;
+    }
     const view = await this.getOrCreateView();
     view.setFolder(folder);
     await this.app.workspace.revealLeaf(view.leaf);
@@ -531,16 +553,15 @@ export default class BloomMDPlugin extends Plugin {
     new Notice("BloomMD web opened. Choose the local file manually; note content was not sent.");
   }
 
-  markdownFiles(): Array<{ path: string; title: string }> {
-    return this.app.vault.getMarkdownFiles()
-      .slice()
+  markdownFiles(folder: TFolder | null): Array<{ path: string; title: string }> {
+    return filesInFolder(folder)
+      .filter((file) => file.extension === "md")
       .sort((a, b) => a.basename.localeCompare(b.basename))
       .map((file) => ({ path: file.path, title: file.basename }));
   }
 
-  resourceFiles(): ResourceEntry[] {
-    return this.app.vault.getFiles()
-      .slice()
+  resourceFiles(folder: TFolder | null): ResourceEntry[] {
+    return filesInFolder(folder)
       .sort((a, b) => a.path.localeCompare(b.path))
       .map((file) => ({ path: file.path, title: file.basename, extension: file.extension.toLowerCase() }));
   }

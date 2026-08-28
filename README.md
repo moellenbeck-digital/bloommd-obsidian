@@ -1,5 +1,10 @@
 # BloomMD for Obsidian
 
+> [!IMPORTANT]
+> **Public release mirror — implementation changes are maintained in the monorepo.**
+>
+> The authoritative source code and development work live in the [BloomMD monorepo](https://github.com/moellenbeck-digital/BloomMD). This repository exists for public Obsidian release artifacts and distribution through BRAT. Use [Issues](https://github.com/moellenbeck-digital/bloommd-obsidian/issues) for user-facing plugin bugs and compatibility reports; implementation pull requests belong in the monorepo.
+
 **See an Obsidian note as an editable Markdown map, without moving your files into a new format.**
 
 BloomMD turns Markdown structure into a visual workspace. In Obsidian, this plugin maps the note or folder you already have, lets you work with headings as nodes, and writes structural edits back to normal `.md` files.
@@ -75,11 +80,8 @@ BRAT keeps the plugin updated as beta releases are tagged.
 
 ## Feedback And Issues
 
-GitHub issue creation may be restricted while the plugin is in beta review and while the public repository mirrors the internal BloomMD development workspace.
+Use [GitHub Issues](https://github.com/moellenbeck-digital/bloommd-obsidian/issues) for plugin bugs and compatibility reports. Use the beta and contact channels linked from <https://bloommd.io> for product feedback, feature requests, and private reports.
 
-For now:
-
-- Use the beta and contact channels linked from <https://bloommd.io> for bugs, feedback, and feature requests.
 - Include your Obsidian version, BloomMD plugin version, operating system, and a minimal Markdown example when reporting rendering or editing problems.
 - Do not attach private vault content.
 - Use [SECURITY.md](SECURITY.md) for vulnerability reports.
@@ -90,7 +92,7 @@ The public product direction is documented on <https://bloommd.io>: local-first 
 
 This plugin follows that roadmap as the Obsidian companion layer. Local `TODO` files are not used as a separate source of truth, and this README intentionally avoids linking to private or restricted GitHub project boards.
 
-## Development
+## Release verification
 
 ```bash
 bun install
@@ -100,7 +102,7 @@ bun run build
 bun run release:verify
 ```
 
-The Markdown engine is covered by unit tests for CommonMark edge cases, including Setext headings, fenced and indented code, HTML blocks, unterminated frontmatter, ATX closing sequences, and heading-depth limits. See [RELEASE.md](RELEASE.md) for the release process.
+This checkout is a public release mirror. Development changes belong in the [BloomMD monorepo](https://github.com/moellenbeck-digital/BloomMD); the commands above verify a generated public snapshot. The Markdown engine is covered by unit tests for CommonMark edge cases, including Setext headings, fenced and indented code, HTML blocks, unterminated frontmatter, ATX closing sequences, and heading-depth limits. See [RELEASE.md](RELEASE.md) for the release process.
 
 ## Links
 

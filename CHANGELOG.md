@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.7
+
+BloomMD 0.5.7 aligns keyboard navigation and focus handling across the Obsidian, Web, and Desktop experiences.
+
+- Start inline renaming immediately after creating a child or sibling node.
+- Keep focus on the same node after confirming or cancelling a rename.
+- Focus the parent after deleting a branch with `Delete` or `Backspace`.
+- Keep focus useful after undo/redo, including when undo removes a newly-created node.
+- Add `R` as a rename shortcut alongside `F2` and document the focus behavior in the shortcut help.
+- Add accessible node identity and treeitem semantics to map and outline nodes.
+
+## 0.5.6
+
+BloomMD 0.5.6 hardens the public beta against Obsidian Community review findings.
+
+- Limit Markdown and resource listings to the active note's folder tree instead of enumerating the entire vault.
+- Remove the two unnecessary type assertions reported by the review.
+- Add GitHub artifact provenance attestations for the supported release assets.
+- Keep `icon.png` in the repository root for branding without attaching it as an unsupported release asset.
+
+## 0.5.5
+
+BloomMD 0.5.5 is a maintenance release that aligns the plugin with the canonical BloomMD Markdown contract.
+
+- Use the shared, browser-safe Markdown parser and structural operations from `@bloommd/core/browser`.
+- Keep CommonMark- and Obsidian-compatible round-tripping for frontmatter, Setext headings, fenced and indented code, HTML blocks, CRLF files, links, stable IDs, and node metadata.
+- Keep branch moves, copies, renames, sibling/child creation, deletion, and content edits on the same lossless Markdown operations used by the BloomMD workspace.
+- Publish the plugin from the reproducible monorepo-to-mirror release path with source and Core hash evidence.
+- Keep the plugin local-only, desktop-only, and free of telemetry or vault uploads.
+
 ## 0.5.4
 
 BloomMD 0.5.4 is a small public beta patch for the Obsidian Community Directory.

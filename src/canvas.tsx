@@ -102,8 +102,8 @@ export interface CanvasActions {
   deleteBranch: (id: string) => Promise<boolean>;
   reparentBranch: (id: string, parentId: string) => Promise<boolean>;
   copyBranches: (sourceIds: string[], targetParentId: string) => Promise<boolean>;
-  undo: () => Promise<boolean>;
-  redo: () => Promise<boolean>;
+  undo: (selectedId: string | null) => Promise<string | null>;
+  redo: (selectedId: string | null) => Promise<string | null>;
   persistLayout: (layout: PersistedCanvasLayout) => void;
   openMarkdown: () => void;
   openBloomMD: () => void;
@@ -136,6 +136,31 @@ export function claimPendingAction(pending: Set<string>, id: string): boolean {
   if (pending.has(id)) return false;
   pending.add(id);
   return true;
+}
+
+/** Focus a rendered map or outline node without moving the Obsidian page scroll position. */
+export function focusNodeElement(nodeId: string): boolean {
+  if (typeof document === "undefined") return false;
+  const element = [...document.querySelectorAll<HTMLElement>("[data-node-id]")]
+    .find((candidate) => candidate.dataset.nodeId === nodeId);
+  if (!element) return false;
+  element.focus({ preventScroll: true });
+  return true;
+}
+
+/** Retry after a mutation because React Flow may need a render frame before the node exists. */
+export function requestNodeFocus(nodeId: string): void {
+  if (typeof window === "undefined") return;
+
+  let attempts = 0;
+  const tryFocus = () => {
+    if (focusNodeElement(nodeId) || attempts >= 4) return;
+    attempts += 1;
+    window.setTimeout(tryFocus, 50);
+  };
+
+  if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(tryFocus);
+  else window.setTimeout(tryFocus, 0);
 }
 
 interface ExternalLink {
@@ -177,7 +202,9 @@ interface BloomNodeData extends Record<string, unknown> {
   externalLinkCount: number;
   wikiLinkCount: number;
   showContent: boolean;
+  autoEdit: boolean;
   onSelect: (id: string, additive: boolean) => void;
+  onAutoEditConsumed: () => void;
   onRename: (id: string, title: string, expectedTitle: string) => Promise<boolean>;
   onToggleCollapse: (id: string) => void;
   onAddChild: (id: string) => void;
@@ -217,7 +244,8 @@ function sameCanvasNodeSync(left: BloomFlowNode[], right: BloomFlowNode[]): bool
       && heading.children.join("\u0000") === nextHeading.children.join("\u0000")
       && metadataValue(heading.metadata) === metadataValue(nextHeading.metadata)
       && node.data.collapsed === next.data.collapsed
-      && node.data.showContent === next.data.showContent;
+      && node.data.showContent === next.data.showContent
+      && node.data.autoEdit === next.data.autoEdit;
   });
 }
 
@@ -346,6 +374,8 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(heading.title);
   const inputRef = useRef<HTMLInputElement>(null);
+  const editStartTitleRef = useRef(heading.title);
+  const skipBlurCommitRef = useRef(false);
   const preview = contentPreview(heading.content);
   const isRoot = heading.parentId === null;
   const editable = heading.kind === "heading";
@@ -355,9 +385,28 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
     if (!editing) return;
     inputRef.current?.focus();
     inputRef.current?.select();
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+    return () => window.clearTimeout(timer);
   }, [editing]);
 
-  const commitTitle = useCallback(async () => {
+  const startEditing = useCallback(() => {
+    if (!editable) return;
+    skipBlurCommitRef.current = false;
+    editStartTitleRef.current = heading.title;
+    setTitle(heading.title);
+    setEditing(true);
+  }, [editable, heading.title]);
+
+  useEffect(() => {
+    if (!data.autoEdit || !editable) return;
+    startEditing();
+    data.onAutoEditConsumed();
+  }, [data.autoEdit, data.onAutoEditConsumed, editable, startEditing]);
+
+  const commitTitle = useCallback(async (restoreFocus = false) => {
     const nextTitle = title.trim();
     if (nextTitle && nextTitle !== heading.title) {
       const saved = await data.onRename(id, nextTitle, heading.title);
@@ -366,23 +415,38 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
       setTitle(heading.title);
     }
     setEditing(false);
+    if (restoreFocus) requestNodeFocus(id);
   }, [data, heading.title, id, title]);
+
+  const cancelEditing = useCallback(() => {
+    skipBlurCommitRef.current = true;
+    setTitle(editStartTitleRef.current);
+    setEditing(false);
+    requestNodeFocus(id);
+  }, [id]);
 
   return (
     <div
       className={`bloommd-flow-node bloommd-level-${Math.min(heading.level, 6)}${selected ? " is-selected" : ""}`}
-      tabIndex={0}
-      onClick={(event) => data.onSelect(id, event.shiftKey)}
+      data-node-id={id}
+      role="treeitem"
+      aria-selected={selected}
+      aria-level={heading.level}
+      tabIndex={selected ? 0 : -1}
+      onClick={(event) => {
+        data.onSelect(id, event.shiftKey);
+        event.currentTarget.focus({ preventScroll: true });
+      }}
       onDoubleClick={(event) => {
         event.stopPropagation();
-        if (editable) setEditing(true);
+        if (editable) startEditing();
         else if (heading.filePath) data.onOpenFile(heading.filePath);
       }}
       onKeyDown={(event) => {
         if (editing || !editable) return;
-        if (event.key === "F2") {
+        if (event.key === "F2" || event.key.toLowerCase() === "r") {
           event.preventDefault();
-          setEditing(true);
+          startEditing();
         }
       }}
     >
@@ -414,13 +478,23 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
             className="bloommd-inline-title nodrag"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            onBlur={() => void commitTitle()}
+            onBlur={() => {
+              if (skipBlurCommitRef.current) {
+                skipBlurCommitRef.current = false;
+                return;
+              }
+              void commitTitle();
+            }}
             onKeyDown={(event) => {
               event.stopPropagation();
-              if (event.key === "Enter") void commitTitle();
+              if (event.key === "Enter") {
+                event.preventDefault();
+                skipBlurCommitRef.current = true;
+                void commitTitle(true);
+              }
               if (event.key === "Escape") {
-                setTitle(heading.title);
-                setEditing(false);
+                event.preventDefault();
+                cancelEditing();
               }
             }}
           />
@@ -617,9 +691,9 @@ function Inspector({
   }, [metadataBaseline, onSaveMetadata]);
 
   const changeKind = useCallback((kind: MarkdownNodeKind) => {
-    const next = kind === "topic"
+    const next: MarkdownNodeMetadata | undefined = kind === "topic"
       ? undefined
-      : { ...(metadataDraft?.kind === "topic" ? {} : metadataDraft), kind } as MarkdownNodeMetadata;
+      : { ...(metadataDraft?.kind === "topic" ? {} : metadataDraft), kind };
     void saveMetadata(next);
   }, [metadataDraft, saveMetadata]);
 
@@ -864,13 +938,14 @@ function ShortcutHelp({ onClose }: { onClose: () => void }) {
         <div className="bloommd-shortcut-list">
           <div><kbd>Tab</kbd><span>Add a child node</span></div>
           <div><kbd>Enter</kbd><span>Add a sibling node</span></div>
-          <div><kbd>F2</kbd><span>Rename the focused node</span></div>
-          <div><kbd>Delete</kbd><span>Delete the selected branch</span></div>
+          <div><kbd>R / F2</kbd><span>Rename the focused node</span></div>
+          <div><kbd>Delete / Backspace</kbd><span>Delete the selected branch and focus its parent</span></div>
           <div><kbd>Arrow keys</kbd><span>Move between parent, children and siblings</span></div>
           <div><kbd>Cmd/Ctrl + C</kbd><span>Copy selected branches</span></div>
           <div><kbd>Cmd/Ctrl + V</kbd><span>Paste branches below the selected node</span></div>
           <div><kbd>Cmd/Ctrl + Z</kbd><span>Undo the last Markdown change</span></div>
           <div><kbd>Cmd/Ctrl + Shift + Z</kbd><span>Redo the last Markdown change</span></div>
+          <div><kbd>Return / Escape</kbd><span>Finish or cancel rename and keep node focus</span></div>
           <div><kbd>Alt + 1 / 2 / 3</kbd><span>Switch map, outline and presentation</span></div>
           <div><kbd>?</kbd><span>Open this help</span></div>
         </div>
@@ -927,9 +1002,15 @@ function OutlineMode({
           <button
             key={heading.id}
             type="button"
+            data-node-id={heading.id}
+            aria-selected={selectedId === heading.id}
             className={selectedId === heading.id ? "is-selected" : ""}
             style={{ paddingLeft: `${16 + depth * 26}px` }}
-            onClick={() => { onSelect(heading.id); onOpenInspector(heading.id); }}
+            onClick={(event) => {
+              onSelect(heading.id);
+              onOpenInspector(heading.id);
+              event.currentTarget.focus();
+            }}
           >
             <span className="bloommd-outline-level">H{heading.level}</span>
             <span className="bloommd-outline-title">{heading.title}</span>
@@ -1017,6 +1098,7 @@ function CanvasInner(props: CanvasProps) {
   const [selectedId, setSelectedId] = useState<string | null>(props.rootId || null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(props.rootId ? [props.rootId] : []));
   const selectedIdsRef = useRef<Set<string>>(new Set(props.rootId ? [props.rootId] : []));
+  const [autoEditId, setAutoEditId] = useState<string | null>(null);
   const [copiedBranchIds, setCopiedBranchIds] = useState<string[]>([]);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -1025,6 +1107,7 @@ function CanvasInner(props: CanvasProps) {
   const [collapsed, setCollapsed] = useState(() => new Set(props.layout.collapsed));
   const [saveState, setSaveState] = useState<"saved" | "saving" | "conflict">("saved");
   const pendingChildAdds = useRef(new Set<string>());
+  const pendingSiblingAdds = useRef(new Set<string>());
   const latestLayout = useRef<PersistedCanvasLayout>(props.layout ?? EMPTY_LAYOUT);
   const runtimePositions = useRef<Record<string, NodePosition>>(props.layout.positions ?? {});
 
@@ -1083,7 +1166,8 @@ function CanvasInner(props: CanvasProps) {
         const newId = await props.actions.addChild(id);
         if (newId) {
           selectNode(newId);
-          setInspectorOpen(true);
+          setInspectorOpen(false);
+          setAutoEditId(newId);
         }
         return Boolean(newId);
       } finally {
@@ -1091,6 +1175,37 @@ function CanvasInner(props: CanvasProps) {
       }
     });
   }, [props.actions, run, selectNode]);
+
+  const addSibling = useCallback((id: string) => {
+    if (!claimPendingAction(pendingSiblingAdds.current, id)) return;
+    void run(async () => {
+      try {
+        const newId = await props.actions.addSibling(id);
+        if (newId) {
+          selectNode(newId);
+          setInspectorOpen(false);
+          setAutoEditId(newId);
+        }
+        return Boolean(newId);
+      } finally {
+        pendingSiblingAdds.current.delete(id);
+      }
+    });
+  }, [props.actions, run, selectNode]);
+
+  const deleteNode = useCallback((id: string) => {
+    const parentId = headingsById.get(id)?.parentId;
+    if (!parentId) return;
+    void run(async () => {
+      const saved = await props.actions.deleteBranch(id);
+      if (saved) {
+        selectNode(parentId);
+        setInspectorOpen(false);
+        requestNodeFocus(parentId);
+      }
+      return saved;
+    });
+  }, [headingsById, props.actions, run, selectNode]);
 
   const flowModel = useMemo(() => {
     const automatic = autoLayout(props.headings, visibleIds);
@@ -1106,20 +1221,13 @@ function CanvasInner(props: CanvasProps) {
           externalLinkCount: externalLinks(heading.content).length,
           wikiLinkCount: wikiLinks(heading.content).length,
           showContent: props.showNodeContent,
+          autoEdit: autoEditId === heading.id,
           onSelect: selectNode,
+          onAutoEditConsumed: () => setAutoEditId(null),
           onRename: (id, title, expected) => run(() => props.actions.renameNode(id, title, expected)),
           onToggleCollapse: toggleCollapse,
           onAddChild: addChild,
-          onAddSibling: (id) => {
-            void run(async () => {
-              const newId = await props.actions.addSibling(id);
-              if (newId) {
-                selectNode(newId);
-                setInspectorOpen(true);
-              }
-              return Boolean(newId);
-            });
-          },
+          onAddSibling: addSibling,
           onToggleTask: (id) => {
             const heading = headingsById.get(id);
             if (heading?.metadata?.kind !== "task") return;
@@ -1129,7 +1237,7 @@ function CanvasInner(props: CanvasProps) {
             };
             void run(() => props.actions.updateMetadata(id, metadata, heading.metadata));
           },
-          onDelete: (id) => void run(() => props.actions.deleteBranch(id)),
+          onDelete: (id) => deleteNode(id),
           onOpenInspector: (id) => {
             selectNode(id);
             setInspectorOpen(true);
@@ -1146,7 +1254,7 @@ function CanvasInner(props: CanvasProps) {
           : [];
       });
     return { nodes, edges };
-  }, [addChild, collapsed, headingsById, props.actions, props.headings, props.layout.positions, props.showNodeContent, run, selectNode, toggleCollapse, visibleIds]);
+  }, [addChild, addSibling, autoEditId, collapsed, deleteNode, headingsById, props.actions, props.headings, props.layout.positions, props.showNodeContent, run, selectNode, toggleCollapse, visibleIds]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<BloomFlowNode>(flowModel.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowModel.edges);
@@ -1185,6 +1293,7 @@ function CanvasInner(props: CanvasProps) {
     setSelectedIds(next);
     setCopiedBranchIds([]);
     setInspectorOpen(false);
+    setAutoEditId(null);
     setHelpOpen(false);
     setMode(props.layout.mode ?? "map");
     setSearch("");
@@ -1200,10 +1309,12 @@ function CanvasInner(props: CanvasProps) {
 
   const focusNode = useCallback((id: string) => {
     const node = reactFlow.getNode(id);
-    if (!node) return;
     selectNode(id);
-    void reactFlow.fitView({ nodes: [node], padding: 1.3, duration: 240, maxZoom: 1.15 });
-  }, [reactFlow, selectNode]);
+    requestNodeFocus(id);
+    if (mode === "map" && node) {
+      void reactFlow.fitView({ nodes: [node], padding: 1.3, duration: 240, maxZoom: 1.15 });
+    }
+  }, [mode, reactFlow, selectNode]);
 
   const openInspector = useCallback((id: string) => {
     selectNode(id);
@@ -1224,9 +1335,8 @@ function CanvasInner(props: CanvasProps) {
       nextId = siblings[nextIndex];
     }
     if (!nextId) return;
-    if (mode === "map") focusNode(nextId);
-    else selectNode(nextId);
-  }, [focusNode, headingsById, mode, props.headings, selectNode, selectedId]);
+    focusNode(nextId);
+  }, [focusNode, headingsById, props.headings, selectedId]);
 
   const movePresentation = useCallback((delta: number) => {
     const nextId = presentationIds[presentationIndex + delta];
@@ -1243,9 +1353,20 @@ function CanvasInner(props: CanvasProps) {
     void run(() => props.actions.copyBranches(copiedBranchIds, selectedId));
   }, [copiedBranchIds, headingsById, props.actions, run, selectedId]);
 
+  const applyHistory = useCallback((direction: "undo" | "redo") => {
+    void run(async () => {
+      const focusId = await props.actions[direction](selectedId);
+      if (focusId) {
+        selectNode(focusId);
+        requestNodeFocus(focusId);
+      }
+      return Boolean(focusId);
+    });
+  }, [props.actions, run, selectNode, selectedId]);
+
   const handleKeyboard = useCallback((event: KeyboardEvent) => {
-    const target = event.target as HTMLElement | null;
-    if (!target || !shellRef.current?.contains(target)) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !shellRef.current?.contains(target)) return;
     const inTextField = Boolean(target.closest("input, textarea, [contenteditable='true']"));
     const primary = event.metaKey || event.ctrlKey;
 
@@ -1280,12 +1401,12 @@ function CanvasInner(props: CanvasProps) {
     }
     if (primary && event.key.toLowerCase() === "z" && !event.shiftKey) {
       event.preventDefault();
-      void run(props.actions.undo);
+      applyHistory("undo");
       return;
     }
     if ((primary && event.key.toLowerCase() === "z" && event.shiftKey) || (primary && event.key.toLowerCase() === "y")) {
       event.preventDefault();
-      void run(props.actions.redo);
+      applyHistory("redo");
       return;
     }
     if (event.key === "Escape") {
@@ -1297,6 +1418,11 @@ function CanvasInner(props: CanvasProps) {
     }
     if (!selectedId || !selectedHeading || selectedHeading.kind !== "heading") return;
     const currentId = selectedId;
+    if (event.key === "F2" || event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      setAutoEditId(currentId);
+      return;
+    }
     if (event.key === "ArrowRight") { event.preventDefault(); navigateSelection("child"); return; }
     if (event.key === "ArrowLeft") { event.preventDefault(); navigateSelection("parent"); return; }
     if (event.key === "ArrowDown") {
@@ -1318,20 +1444,14 @@ function CanvasInner(props: CanvasProps) {
     }
     if (mode !== "presentation" && event.key === "Enter" && !primary && !event.altKey) {
       event.preventDefault();
-      if (selectedHeading.parentId) {
-        void run(async () => {
-          const newId = await props.actions.addSibling(currentId);
-          if (newId) openInspector(newId);
-          return Boolean(newId);
-        });
-      }
+      if (!event.repeat && selectedHeading.parentId) addSibling(currentId);
       return;
     }
     if (mode !== "presentation" && (event.key === "Delete" || event.key === "Backspace") && currentId !== props.rootId) {
       event.preventDefault();
-      void run(() => props.actions.deleteBranch(currentId));
+      if (!event.repeat) deleteNode(currentId);
     }
-  }, [addChild, changeMode, copySelection, helpOpen, inspectorOpen, mode, movePresentation, navigateSelection, pasteSelection, props.actions, props.rootId, run, search, selectedHeading, selectedId, openInspector, selectNode]);
+  }, [addChild, addSibling, applyHistory, changeMode, copySelection, deleteNode, helpOpen, inspectorOpen, mode, movePresentation, navigateSelection, pasteSelection, props.rootId, run, search, selectedHeading, selectedId, selectNode]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyboard, true);
@@ -1396,8 +1516,8 @@ function CanvasInner(props: CanvasProps) {
           <SaveState state={saveState} />
           <button type="button" className="bloommd-icon-control" title="Copy selected branches (Cmd/Ctrl+C)" aria-label="Copy selected branches" disabled={selectedIds.size === 0} onClick={copySelection}><Copy size={17} /></button>
           <button type="button" className="bloommd-icon-control" title="Paste branches as children (Cmd/Ctrl+V)" aria-label="Paste branches as children" disabled={!selectedId || copiedBranchIds.length === 0} onClick={pasteSelection}><ClipboardPaste size={17} /></button>
-          <button type="button" className="bloommd-icon-control" title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" disabled={!props.canUndo} onClick={() => void run(props.actions.undo)}><Undo2 size={17} /></button>
-          <button type="button" className="bloommd-icon-control" title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" disabled={!props.canRedo} onClick={() => void run(props.actions.redo)}><Redo2 size={17} /></button>
+          <button type="button" className="bloommd-icon-control" title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" disabled={!props.canUndo} onClick={() => applyHistory("undo")}><Undo2 size={17} /></button>
+          <button type="button" className="bloommd-icon-control" title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" disabled={!props.canRedo} onClick={() => applyHistory("redo")}><Redo2 size={17} /></button>
         </div>
         <div className="bloommd-toolbar-group" aria-label="Canvas tools">
           {mode === "map" && <button type="button" className="bloommd-icon-control" title="Auto layout" aria-label="Auto layout" onClick={performAutoLayout}><Sparkles size={17} /></button>}
