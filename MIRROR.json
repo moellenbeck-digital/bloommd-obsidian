@@ -3,7 +3,7 @@
   "mode": "release-mirror",
   "canonicalRepository": "moellenbeck-digital/BloomMD",
   "canonicalPath": "plugins/obsidian",
-  "sourceCommit": "5640e4c7b7774083700a94e31507de56d6d988e8",
+  "sourceCommit": "713a1b4add6b86caf1ff4897e5c5e92c541bb456",
   "sourceDirty": false,
   "sourceManifestSha256": "fb189a5b346a9e39ff0709c509d9cda54b2f39cc7acb8bfa672284bf5ce67dc7",
   "pluginVersion": "0.5.7",
