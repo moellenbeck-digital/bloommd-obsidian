@@ -84,11 +84,22 @@ export interface WorkspaceSyncContext {
   workspaces: WorkspaceSyncWorkspace[];
 }
 
+export interface WorkspaceSyncDocument {
+  filename: string;
+}
+
+export interface WorkspaceSyncExistingDocument extends WorkspaceSyncDocument {
+  documentId: string;
+  cloudVersion: number;
+}
+
 export declare class WorkspaceSyncClient {
   constructor(config: WorkspaceSyncClientConfig);
   listWorkspaces(): Promise<WorkspaceSyncContext>;
   selectWorkspace(workspaceId: string): Promise<WorkspaceSyncContext>;
   createDocument(filename: string, markdown: string): Promise<{ documentId: string; cloudVersion: number }>;
+  listDocuments(): Promise<WorkspaceSyncDocument[]>;
+  getExistingDocument(filename: string): Promise<WorkspaceSyncExistingDocument>;
   fetchSyncTicket(filename: string): Promise<{ websocketUrl: string; expiresAt: string; permission: "read" | "write" }>;
   recordSharedDocumentBinding(action: "bound" | "unbound", documentId: string): Promise<void>;
 }

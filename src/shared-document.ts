@@ -133,6 +133,40 @@ export class ObsidianSharedDocumentSession {
     return session;
   }
 
+  /**
+   * Explicitly binds this local note to an already existing cloud document. Unlike `share`, this
+   * never creates a second cloud file when Desktop or another client already owns the document.
+   * The current local hash becomes the comparison baseline: a later remote mismatch is surfaced
+   * by SharedDocumentMirror as a conflict instead of overwriting either side.
+   */
+  static async bindExisting(options: Omit<ObsidianSharedDocumentSessionOptions, "binding"> & { workspaceId?: string; cloudFilename: string }): Promise<ObsidianSharedDocumentSession> {
+    const markdown = await options.vault.readMarkdown(options.file);
+    const client = (options.createClient ?? ((serverUrl, accessToken) => new WorkspaceSyncClient({ baseUrl: serverUrl, accessToken })))(options.serverUrl, options.accessToken);
+    const requestedWorkspaceId = options.workspaceId?.trim();
+    const context = requestedWorkspaceId ? await client.selectWorkspace(requestedWorkspaceId) : await client.listWorkspaces();
+    if (context.workspace?.role === "viewer") throw new Error("WORKSPACE_READ_ONLY");
+    if (!context.workspace) throw new Error("WORKSPACE_NOT_SELECTED");
+    const existing = await client.getExistingDocument(options.cloudFilename);
+    const local = createLocalSharedDocumentState(hashSharedDocumentMarkdown(markdown));
+    const bindingRequested = transitionSharedDocumentState(local, {
+      type: "share_requested",
+      workspaceId: context.workspace.id,
+      cloudFilename: existing.filename,
+    });
+    const connected = transitionSharedDocumentState(bindingRequested, {
+      type: "share_confirmed",
+      documentId: existing.documentId,
+      cloudVersion: existing.cloudVersion,
+      markdownHash: hashSharedDocumentMarkdown(markdown),
+    });
+    if (connected.kind !== "connected") throw new Error("SHARED_DOCUMENT_BINDING_FAILED");
+    await client.recordSharedDocumentBinding("bound", connected.binding.documentId);
+    const session = new ObsidianSharedDocumentSession({ ...options, binding: connected.binding, createClient: () => client });
+    await options.onBindingChange(connected.binding);
+    await session.connect();
+    return session;
+  }
+
   getBinding(): SharedDocumentBinding {
     return this.mirror.getBinding();
   }

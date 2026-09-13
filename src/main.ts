@@ -9,6 +9,7 @@ import {
   Plugin,
   PluginSettingTab,
   Platform,
+  SuggestModal,
   TFile,
   TFolder,
   Setting,
@@ -73,6 +74,52 @@ interface BloomMDData {
 interface HistoryEntry {
   before: string;
   after: string;
+}
+
+type SharedDocumentChoice =
+  | { kind: "new"; filename: string }
+  | { kind: "existing"; filename: string };
+
+class SharedDocumentChoiceModal extends SuggestModal<SharedDocumentChoice> {
+  private settled = false;
+
+  constructor(
+    app: App,
+    private readonly choices: SharedDocumentChoice[],
+    private readonly resolveChoice: (choice: SharedDocumentChoice | null) => void,
+  ) {
+    super(app);
+    this.setPlaceholder("Create a new cloud document or bind an existing one…");
+  }
+
+  getSuggestions(query: string): SharedDocumentChoice[] {
+    const normalized = query.trim().toLocaleLowerCase();
+    return this.choices.filter((choice) => !normalized || choice.filename.toLocaleLowerCase().includes(normalized));
+  }
+
+  renderSuggestion(choice: SharedDocumentChoice, element: HTMLElement): void {
+    element.createEl("div", { text: choice.kind === "new" ? `Create new: ${choice.filename}` : `Bind existing: ${choice.filename}` });
+    element.createEl("small", { text: choice.kind === "new" ? "Only this note will be uploaded." : "No new cloud document will be created." });
+  }
+
+  onChooseSuggestion(choice: SharedDocumentChoice): void {
+    this.finish(choice);
+  }
+
+  onClose(): void {
+    super.onClose();
+    this.finish(null);
+  }
+
+  private finish(choice: SharedDocumentChoice | null): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolveChoice(choice);
+  }
+}
+
+function chooseSharedDocument(app: App, choices: SharedDocumentChoice[]): Promise<SharedDocumentChoice | null> {
+  return new Promise((resolveChoice) => new SharedDocumentChoiceModal(app, choices, resolveChoice).open());
 }
 
 const DEFAULT_SETTINGS: BloomMDSettings = {
@@ -577,17 +624,34 @@ export default class BloomMDPlugin extends Plugin {
     }
     await this.app.vault.process(file, (current) => ensureHeadingIds(current).markdown);
     try {
-      const { ObsidianSharedDocumentSession } = await loadSharedDocumentRuntime();
-      const session = await ObsidianSharedDocumentSession.share({
+      const { ObsidianSharedDocumentSession, WorkspaceSyncClient } = await loadSharedDocumentRuntime();
+      const client = new WorkspaceSyncClient({ baseUrl: this.settings.collaborationServerUrl, accessToken: token });
+      const requestedWorkspaceId = this.settings.collaborationWorkspaceId.trim();
+      const context = requestedWorkspaceId ? await client.selectWorkspace(requestedWorkspaceId) : await client.listWorkspaces();
+      if (!context.workspace) throw new Error("WORKSPACE_NOT_SELECTED");
+      if (context.workspace.role === "viewer") throw new Error("WORKSPACE_READ_ONLY");
+      const existingDocuments = await client.listDocuments();
+      const choice = await chooseSharedDocument(this.app, [
+        { kind: "new", filename: `${file.basename}.md` },
+        ...existingDocuments.map((document) => ({ kind: "existing" as const, filename: document.filename })),
+      ]);
+      if (!choice) return;
+      const sessionOptions = {
         file: { path: file.path, basename: file.basename },
         vault: this.vaultAdapter(),
         serverUrl: this.settings.collaborationServerUrl,
         accessToken: token,
-        ...(this.settings.collaborationWorkspaceId.trim() ? { workspaceId: this.settings.collaborationWorkspaceId.trim() } : {}),
-        onBindingChange: async (binding) => this.persistSharedDocumentBinding(file.path, binding),
-      });
+        workspaceId: context.workspace.id,
+        createClient: () => client,
+        onBindingChange: async (binding: ObsidianSharedDocumentEntry["binding"]) => this.persistSharedDocumentBinding(file.path, binding),
+      };
+      const session = choice.kind === "new"
+        ? await ObsidianSharedDocumentSession.share({ ...sessionOptions, cloudFilename: choice.filename })
+        : await ObsidianSharedDocumentSession.bindExisting({ ...sessionOptions, cloudFilename: choice.filename });
       this.sharedDocumentSessions.set(file.path, session);
-      new Notice(`BloomMD: “${file.basename}” is now shared with the selected workspace.`);
+      new Notice(choice.kind === "new"
+        ? `BloomMD: “${file.basename}” is now shared with the selected workspace.`
+        : `BloomMD: “${file.basename}” is now bound to “${choice.filename}”.`);
     } catch (error) {
       console.error("BloomMD: explicit share failed", error);
       new Notice(`BloomMD: The note could not be shared (${error instanceof Error ? error.message : "unknown error"}).`);
@@ -685,6 +749,10 @@ export default class BloomMDPlugin extends Plugin {
   saveLayout(key: string, layout: PersistedCanvasLayout) {
     if (!key) return;
     this.layouts[key] = layout;
+    this.schedulePersist();
+  }
+
+  private schedulePersist() {
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       this.saveTimer = null;

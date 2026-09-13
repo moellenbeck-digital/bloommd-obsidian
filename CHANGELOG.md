@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.9
+
+BloomMD 0.5.9 completes a safe handoff for shared notes and keeps local map state durable.
+
+- Choose explicitly whether Obsidian should create a new shared document or bind the current note to an existing one in the selected workspace.
+- Prevent an already shared note from being uploaded as a same-named duplicate cloud document.
+- Keep the local Markdown file private to the vault: only the selected workspace document identity is bound, and existing remote content is still handled through the normal conflict flow.
+- Persist canvas layout changes after moving nodes, changing views, collapsing branches, or updating the viewport.
+- Keep the layout persistence path compatible with the existing file/folder rename migration.
+
 ## 0.5.8
 
 BloomMD 0.5.8 makes the collaboration-ready Obsidian beta safer to install and maintain.

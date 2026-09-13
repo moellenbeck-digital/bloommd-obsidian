@@ -144,4 +144,21 @@ next mirror check.
 - Mirror synchronization excludes generated runtime bundles before rebuilding them in the public checkout.
 - The exact `0.5.8` tag must be used; earlier release tags remain immutable.
 
+## 0.5.9 shared-document binding evidence
+
+- The sharing command explicitly asks whether the current local note creates a new cloud document
+  or binds to a selected, existing workspace document.
+- Binding reads the existing cloud document identity and version; it does not transmit a
+  vault-local path and does not create a same-named duplicate.
+- A local Markdown hash is retained as the binding baseline, so an existing remote divergence
+  enters the normal conflict path instead of being overwritten silently.
+- Core and plugin tests cover document lookup, viewer rejection, and the no-duplicate binding
+  path; the release contract packages the build as `0.5.9`.
+
+## 0.5.9 layout persistence release evidence
+
+- Persist canvas layout changes whenever the map saves positions, view mode, collapsed branches, or viewport state.
+- Keep layout data outside Markdown and compatible with the existing file/folder rename migration.
+- The exact `0.5.9` tag must be used; earlier release tags remain immutable.
+
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

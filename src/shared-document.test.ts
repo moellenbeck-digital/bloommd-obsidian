@@ -82,4 +82,68 @@ describe("ObsidianSharedDocumentSession", () => {
     expect(persisted).toHaveLength(1);
     session.disconnect();
   });
+
+  test("binds a vault file to an existing cloud document without creating a duplicate", async () => {
+    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const persisted: unknown[] = [];
+    const provider: SharedSyncProvider = {
+      getStatus: () => "disconnected",
+      setConnectionUrl: () => undefined,
+      connect: () => undefined,
+      disconnect: () => undefined,
+    };
+    const createClient = () => new WorkspaceSyncClient({
+      baseUrl: "https://bloommd.app",
+      accessToken: "bloom_pat_test",
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (url.includes("/api/workspaces")) return json({ workspace: { id: "workspace-1", name: "Team", slug: "team", kind: "team", role: "editor" }, workspaces: [] });
+        if (url.includes("/api/mindmaps/Existing.md")) return json({ frontmatter: { id: "document-existing" }, storage: { version: 9 } });
+        if (url.includes("/api/sync-ticket")) return json({ websocketUrl: "wss://sync.example/ws/existing", expiresAt: "2026-09-13T10:00:00.000Z", permission: "write" });
+        return json({ recorded: true });
+      },
+    });
+
+    const session = await ObsidianSharedDocumentSession.bindExisting({
+      file: { path: "Private/Clients/Research.md", basename: "Research" },
+      vault: { readMarkdown: async () => "# Research\n", writeMarkdown: async () => undefined },
+      serverUrl: "https://bloommd.app",
+      accessToken: "bloom_pat_test",
+      workspaceId: "workspace-1",
+      cloudFilename: "Existing.md",
+      createClient,
+      createProvider: () => provider,
+      onBindingChange: async (binding) => { persisted.push(binding); },
+    });
+
+    expect(session.getBinding()).toMatchObject({ workspaceId: "workspace-1", cloudFilename: "Existing.md", documentId: "document-existing", lastKnownCloudVersion: 9 });
+    expect(calls.some((call) => call.url.endsWith("/api/mindmaps") && call.method === "POST")).toBe(false);
+    expect(calls.find((call) => call.url.endsWith("/api/shared-documents/audit"))?.body).toEqual({ action: "bound", documentId: "document-existing", workspaceId: "workspace-1" });
+    expect(JSON.stringify(calls)).not.toContain("Private/Clients");
+    expect(persisted).toHaveLength(1);
+    session.disconnect();
+  });
+
+  test("does not bind an existing document for a viewer", async () => {
+    const client = new WorkspaceSyncClient({
+      baseUrl: "https://bloommd.app",
+      accessToken: "bloom_pat_test",
+      fetchImpl: async (input) => {
+        if (String(input).includes("/api/workspaces")) return json({ workspace: { id: "workspace-1", name: "Team", slug: "team", kind: "team", role: "viewer" }, workspaces: [] });
+        throw new Error("Viewer must not read or bind a document.");
+      },
+    });
+
+    await expect(ObsidianSharedDocumentSession.bindExisting({
+      file: { path: "Private/Clients/Research.md", basename: "Research" },
+      vault: { readMarkdown: async () => "# Research\n", writeMarkdown: async () => undefined },
+      serverUrl: "https://bloommd.app",
+      accessToken: "bloom_pat_test",
+      workspaceId: "workspace-1",
+      cloudFilename: "Existing.md",
+      createClient: () => client,
+      onBindingChange: async () => undefined,
+    })).rejects.toThrow("WORKSPACE_READ_ONLY");
+  });
 });
