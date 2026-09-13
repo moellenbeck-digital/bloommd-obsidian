@@ -1,6 +1,6 @@
 # Obsidian Release Process
 
-Obsidian expects `manifest.json`, `README.md`, the license, and the optional `icon.png` at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix. GitHub releases attach only the supported plugin bundle files: `manifest.json`, `main.js`, and `styles.css`; `icon.png` stays at the repository root for directory branding.
+Obsidian expects `manifest.json`, `README.md`, the license, and the optional `icon.png` at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix. GitHub releases attach the plugin runtime files: `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css`; `icon.png` stays at the repository root for directory branding.
 
 ## Repository topology
 
@@ -18,7 +18,7 @@ mirror sync, these generated files are created from the canonical Core sources:
 - `MIRROR.json` — source commit, version, and SHA-256 evidence for both snapshots.
 
 The public package removes the monorepo-only `@bloommd/core: workspace:*` dependency. It must never
-be edited by hand. `bun.lock`, `main.js`, `styles.css`, and `release/<version>/` in the public
+be edited by hand. `bun.lock`, `main.js`, `shared-runtime.js`, `styles.css`, and `release/<version>/` in the public
 checkout are release/build artifacts; the root `bun.lock` remains authoritative for monorepo work.
 The nested plugin lockfile and generated bundles are intentionally not tracked in the monorepo.
 
@@ -77,14 +77,14 @@ next mirror check.
 4. Run `bun install --frozen-lockfile`, `bun run typecheck`, `bun run test`, and `bun run release:package` in the public checkout.
 5. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
 6. Push the dedicated repository and create an exact version tag such as `0.5.0`.
-7. Verify the GitHub release contains `manifest.json`, `main.js`, and `styles.css`, and verify `icon.png` remains at the repository root.
+7. Verify the GitHub release contains `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css`, and verify `icon.png` remains at the repository root.
 8. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
 
 ## 0.5.0 public beta evidence
 
 - Version is synchronized across `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md`.
 - The release workflow runs audit, typecheck, tests, build, and the release contract before publishing assets.
-- The clean-vault preparation script installs the generated `manifest.json`, `main.js`, and `styles.css` without copying private vault data.
+- The clean-vault preparation script installs the generated `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css` without copying private vault data.
 - BRAT installation remains a manual verification step because it requires the Obsidian desktop application.
 
 ## 0.5.1 patch evidence
@@ -136,5 +136,12 @@ next mirror check.
   with the Web/Desktop interaction contract tracked in BloomMD issue #189.
 - Adds stable `data-node-id` and treeitem semantics for map and outline focus restoration.
 - The exact `0.5.7` tag must be used; earlier release tags remain immutable.
+
+## 0.5.8 collaboration release evidence
+
+- A file or folder rename migrates only the client-local layout and explicit sharing binding; Markdown, cloud document identity, tokens, and workspace rights remain unchanged.
+- The clean-vault QA command builds the release from canonical source and installs `shared-runtime.js` alongside the primary bundle.
+- Mirror synchronization excludes generated runtime bundles before rebuilding them in the public checkout.
+- The exact `0.5.8` tag must be used; earlier release tags remain immutable.
 
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

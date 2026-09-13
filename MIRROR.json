@@ -3,10 +3,10 @@
   "mode": "release-mirror",
   "canonicalRepository": "moellenbeck-digital/BloomMD",
   "canonicalPath": "plugins/obsidian",
-  "sourceCommit": "713a1b4add6b86caf1ff4897e5c5e92c541bb456",
+  "sourceCommit": "ca978d493b1c979a1f4a72f94d9587f26e9a1713",
   "sourceDirty": false,
-  "sourceManifestSha256": "fb189a5b346a9e39ff0709c509d9cda54b2f39cc7acb8bfa672284bf5ce67dc7",
-  "pluginVersion": "0.5.7",
+  "sourceManifestSha256": "3bda0879ea9e2bca195567fdce6d5fc8fadfa188f971a04d6876aef321321f89",
+  "pluginVersion": "0.5.8",
   "core": {
     "sourcePath": "packages/core/src/obsidian-markdown.ts",
     "sourceSha256": "7566a15edbffb6fbb8281421b7387d1a4a89446c8cfd8768136fe9eb4617e5be",
@@ -18,5 +18,11 @@
     "sourceSha256": "b388139887ca53b5b39d78c302f51ae2098b67e1ecc694dde2b1fb8593789e08",
     "generatedPath": "src/core-types.ts",
     "generatedSha256": "9d8d0cedc6c29c9f6ab0cca3bee7689746490353c8d37ce0c983c74157b561c0"
+  },
+  "sharedRuntime": {
+    "sourcePath": "scripts/obsidian-mirror-shared-runtime.ts",
+    "sourceSha256": "e7ff571bd576c8d7a34af8dd66915bc645620166403b401e64de104b5d183d79",
+    "generatedPath": "src/shared-dependencies-runtime.js",
+    "generatedSha256": "7e8c13018ae4eacbfc6c635f548e6d5613c0770d0153ad08f01d7ca220fdd14f"
   }
 }

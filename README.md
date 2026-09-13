@@ -30,6 +30,10 @@ The wider BloomMD product is evolving as a local-first Markdown workspace: brows
 
 **Layout stays local.** Node positions, viewport, and collapsed branches live in `.obsidian/plugins/bloommd/data.json`. Your Markdown does not accumulate layout metadata.
 
+**Renaming stays coherent.** Renaming a note or folder in Obsidian carries its local map layout and any explicit sharing binding to the new vault-relative path. Markdown, cloud document identity, tokens, and workspace rights are unchanged.
+
+**Sharing is explicit.** A note remains entirely local until you choose to share that individual note with a BloomMD workspace. Shared changes are synchronized as Markdown/Yjs updates; the local vault path and layout data stay local.
+
 ## File Behavior
 
 Read this before using the plugin in an important vault.
@@ -39,7 +43,28 @@ Read this before using the plugin in an important vault.
 - Deleting a BloomMD ID does not break the note. BloomMD will generate a new one when needed.
 - Frontmatter, code blocks, HTML blocks, unrelated sections, and text outside headings are preserved.
 - Headings inside fenced code, indented code, and HTML blocks are ignored.
-- The plugin does not upload vault contents, file names, folder names, node text, Markdown, or layout data.
+- The plugin does not upload vault contents, file names, folder names, node text, Markdown, or layout data by default.
+- If you explicitly share a note, its Markdown and a cloud-safe document name are synchronized with the selected BloomMD workspace. Its local vault path, folder structure, and layout data are never sent.
+
+## Optional Collaboration
+
+Collaboration is opt-in for each note. It is useful when a local Obsidian note should be edited with
+the same people who use a BloomMD workspace; it does not turn the complete vault into a cloud vault.
+
+1. In **Settings → BloomMD**, set the BloomMD app URL if you do not use `https://bloommd.app`.
+2. Add a BloomMD collaboration access token using **Collaboration access token**. Obsidian stores it
+   in its native secret storage, not in `data.json`. Leave the workspace ID empty to use your default
+   workspace, or enter the workspace ID explicitly.
+3. Open the Markdown note and run **BloomMD: Share current note with BloomMD workspace** from the
+   command palette.
+4. The BloomMD view shows **Shared · connected**, **offline**, **conflict needs attention**, or
+   **access revoked**. Only the note you explicitly shared is synchronized.
+5. Run **BloomMD: Stop sharing current note with BloomMD workspace** to remove the local binding.
+   The local Markdown file remains untouched; the existing cloud document is retained so that its
+   workspace history is not silently destroyed.
+
+While offline, edits remain local and are offered to the shared mirror after the connection returns.
+If access is revoked, the plugin stops writing remote updates and requires a new explicit share.
 
 ## Install
 
@@ -54,7 +79,7 @@ BRAT keeps the plugin updated as beta releases are tagged.
 
 ### Manual
 
-1. Download `manifest.json`, `main.js`, `styles.css`, and `icon.png` from the [latest release](https://github.com/moellenbeck-digital/bloommd-obsidian/releases/latest).
+1. Download `manifest.json`, `main.js`, `shared-runtime.js`, `styles.css`, and `icon.png` from the [latest release](https://github.com/moellenbeck-digital/bloommd-obsidian/releases/latest).
 2. Copy them into `<vault>/.obsidian/plugins/bloommd/`.
 3. Enable Community Plugins, then enable BloomMD.
 
@@ -63,6 +88,8 @@ BRAT keeps the plugin updated as beta releases are tagged.
 - `BloomMD: Visualize current note` - also available from the ribbon.
 - `BloomMD: Visualize current folder`.
 - `BloomMD: Open current note in BloomMD`.
+- `BloomMD: Share current note with BloomMD workspace`.
+- `BloomMD: Stop sharing current note with BloomMD workspace`.
 
 ## Editing
 

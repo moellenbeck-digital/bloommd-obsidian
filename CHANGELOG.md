@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.8
+
+BloomMD 0.5.8 makes the collaboration-ready Obsidian beta safer to install and maintain.
+
+- Preserve the local canvas layout and explicit sharing binding when a Markdown file or folder is renamed.
+- Reconnect an active shared note with its new vault-local path without changing its cloud document, token, or workspace rights.
+- Build the clean-vault QA plugin release from the canonical source, including the optional collaboration runtime.
+- Keep the public release mirror from treating generated runtime bundles as hand-maintained source files.
+
 ## 0.5.7
 
 BloomMD 0.5.7 aligns keyboard navigation and focus handling across the Obsidian, Web, and Desktop experiences.

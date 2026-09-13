@@ -50,6 +50,37 @@
   flex: 1;
 }
 
+.bloommd-share-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.bloommd-share-status.is-connected {
+  color: var(--color-green);
+  border-color: color-mix(in srgb, var(--color-green) 55%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-green) 11%, transparent);
+}
+
+.bloommd-share-status.is-offline,
+.bloommd-share-status.is-conflict {
+  color: var(--color-yellow);
+  border-color: color-mix(in srgb, var(--color-yellow) 55%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-yellow) 11%, transparent);
+}
+
+.bloommd-share-status.is-revoked {
+  color: var(--color-red);
+  border-color: color-mix(in srgb, var(--color-red) 55%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--color-red) 11%, transparent);
+}
+
 .bloommd-icon-control {
   display: inline-flex;
   align-items: center;

@@ -4,12 +4,14 @@ import {
   FileSystemAdapter,
   ItemView,
   MarkdownView,
+  Modal,
   Notice,
   Plugin,
   PluginSettingTab,
   Platform,
   TFile,
   TFolder,
+  Setting,
   WorkspaceLeaf,
   type SettingDefinitionItem,
 } from "obsidian";
@@ -38,18 +40,34 @@ import {
   type ResourceEntry,
 } from "./canvas";
 import { historyFocusId } from "./history-focus";
+import { migratePersistedPathState } from "./path-migration";
+import type { ObsidianSharedDocumentEntry, ObsidianSharedDocumentSession } from "./shared-document";
 
 const VIEW_TYPE_BLOOMMD = "bloommd-mindmap-view";
 const BLOOMMD_WEB_DEMO = "https://bloommd.io/demo";
+const COLLABORATION_TOKEN_SECRET_ID = "bloommd-collaboration-token";
+
+type SharedDocumentRuntime = typeof import("./shared-runtime");
+
+/**
+ * Collaboration is an opt-in feature. The runtime is a second CommonJS artifact so opening a
+ * purely local vault note never has to parse Yjs and the sync protocol.
+ */
+function loadSharedDocumentRuntime(): Promise<SharedDocumentRuntime> {
+  return Promise.resolve().then(() => require("./shared-runtime") as SharedDocumentRuntime);
+}
 
 interface BloomMDSettings {
   openTarget: "desktop" | "web";
   showNodeContent: boolean;
+  collaborationServerUrl: string;
+  collaborationWorkspaceId: string;
 }
 
 interface BloomMDData {
   settings: BloomMDSettings;
   layouts: Record<string, PersistedCanvasLayout>;
+  sharedDocumentBindings: ObsidianSharedDocumentEntry[];
 }
 
 interface HistoryEntry {
@@ -60,6 +78,8 @@ interface HistoryEntry {
 const DEFAULT_SETTINGS: BloomMDSettings = {
   openTarget: "desktop",
   showNodeContent: true,
+  collaborationServerUrl: "https://bloommd.app",
+  collaborationWorkspaceId: "",
 };
 
 const EMPTY_LAYOUT: PersistedCanvasLayout = { positions: {}, collapsed: [] };
@@ -379,6 +399,7 @@ class BloomMDView extends ItemView {
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       showNodeContent: this.plugin.settings.showNodeContent,
+      sharedStatus: sourceFile ? this.plugin.getSharedDocumentStatus(sourceFile.path) : null,
       resources: this.plugin.resourceFiles(this.scopeFolder),
       actions: {
         renameNode: (id, title, expectedTitle) => editable
@@ -457,6 +478,8 @@ class BloomMDView extends ItemView {
 export default class BloomMDPlugin extends Plugin {
   settings: BloomMDSettings = DEFAULT_SETTINGS;
   private layouts: Record<string, PersistedCanvasLayout> = {};
+  private sharedDocumentBindings: ObsidianSharedDocumentEntry[] = [];
+  private sharedDocumentSessions = new Map<string, ObsidianSharedDocumentSession>();
   private saveTimer: number | null = null;
 
   async onload() {
@@ -467,17 +490,34 @@ export default class BloomMDPlugin extends Plugin {
     this.addCommand({ id: "visualize-current-note", name: "Visualize current note", callback: () => void this.visualizeCurrentNote() });
     this.addCommand({ id: "open-current-note", name: "Open current note", callback: () => void this.openCurrentNoteInBloomMD() });
     this.addCommand({ id: "visualize-current-folder", name: "Visualize current folder", callback: () => void this.visualizeCurrentFolder() });
+    this.addCommand({ id: "share-current-note", name: "Share current note with BloomMD workspace", callback: () => void this.shareCurrentNote() });
+    this.addCommand({ id: "unshare-current-note", name: "Stop sharing current note with BloomMD workspace", callback: () => void this.unshareCurrentNote() });
 
     this.registerEvent(this.app.vault.on("modify", (file) => {
       if (!(file instanceof TFile) || file.extension !== "md") return;
+      const session = this.sharedDocumentSessions.get(file.path);
+      if (session) {
+        void this.app.vault.read(file)
+          .then((markdown) => session.handleVaultModify(markdown))
+          .catch((error: unknown) => console.error("BloomMD: shared vault change could not be mirrored", error));
+      }
       this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD).forEach((leaf) => {
         if (leaf.view instanceof BloomMDView) void leaf.view.handleFileChange(file);
+      });
+    }));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (!(file instanceof TFile) && !(file instanceof TFolder)) return;
+      void this.handleVaultRename(file, oldPath).catch((error: unknown) => {
+        console.error("BloomMD: failed to migrate local references after vault rename", error);
+        new Notice("BloomMD: The renamed item was kept, but its local BloomMD view state could not be updated.");
       });
     }));
     this.addSettingTab(new BloomMDSettingTab(this.app, this));
   }
 
   onunload() {
+    this.sharedDocumentSessions.forEach((session) => session.disconnect());
+    this.sharedDocumentSessions.clear();
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
@@ -513,7 +553,75 @@ export default class BloomMDPlugin extends Plugin {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile) || file.extension !== "md") return;
     const markdown = await this.app.vault.process(file, (current) => ensureHeadingIds(current).markdown);
+    await this.connectSharedDocument(file).catch((error: unknown) => {
+      console.error("BloomMD: shared document connection could not be restored", error);
+      new Notice(`BloomMD collaboration is offline: ${error instanceof Error ? error.message : "connection unavailable"}`);
+    });
     view.setNote(file, markdown);
+  }
+
+  async shareCurrentNote() {
+    const file = this.getActiveMarkdownFile();
+    if (!file) {
+      new Notice("BloomMD: Open a Markdown note first.");
+      return;
+    }
+    if (this.sharedDocumentBindings.some((entry) => entry.localPath === file.path)) {
+      new Notice("BloomMD: This note is already shared. Use ‘Stop sharing current note’ to disconnect it.");
+      return;
+    }
+    const token = this.app.secretStorage.getSecret(COLLABORATION_TOKEN_SECRET_ID);
+    if (!token) {
+      new Notice("BloomMD: Store a collaboration access token in the BloomMD settings first.");
+      return;
+    }
+    await this.app.vault.process(file, (current) => ensureHeadingIds(current).markdown);
+    try {
+      const { ObsidianSharedDocumentSession } = await loadSharedDocumentRuntime();
+      const session = await ObsidianSharedDocumentSession.share({
+        file: { path: file.path, basename: file.basename },
+        vault: this.vaultAdapter(),
+        serverUrl: this.settings.collaborationServerUrl,
+        accessToken: token,
+        ...(this.settings.collaborationWorkspaceId.trim() ? { workspaceId: this.settings.collaborationWorkspaceId.trim() } : {}),
+        onBindingChange: async (binding) => this.persistSharedDocumentBinding(file.path, binding),
+      });
+      this.sharedDocumentSessions.set(file.path, session);
+      new Notice(`BloomMD: “${file.basename}” is now shared with the selected workspace.`);
+    } catch (error) {
+      console.error("BloomMD: explicit share failed", error);
+      new Notice(`BloomMD: The note could not be shared (${error instanceof Error ? error.message : "unknown error"}).`);
+    }
+  }
+
+  async unshareCurrentNote() {
+    const file = this.getActiveMarkdownFile();
+    if (!file) {
+      new Notice("BloomMD: Open a Markdown note first.");
+      return;
+    }
+    this.sharedDocumentSessions.get(file.path)?.disconnect();
+    this.sharedDocumentSessions.delete(file.path);
+    if (!this.sharedDocumentBindings.some((entry) => entry.localPath === file.path)) {
+      new Notice("BloomMD: This note is not currently shared.");
+      return;
+    }
+    const entry = this.sharedDocumentBindings.find((candidate) => candidate.localPath === file.path)!;
+    this.sharedDocumentBindings = this.sharedDocumentBindings.filter((entry) => entry.localPath !== file.path);
+    await this.persistData();
+    this.refreshOpenBloomMDViews();
+    const token = this.app.secretStorage.getSecret(COLLABORATION_TOKEN_SECRET_ID);
+    if (token) {
+      try {
+        const { WorkspaceSyncClient } = await loadSharedDocumentRuntime();
+        const client = new WorkspaceSyncClient({ baseUrl: this.settings.collaborationServerUrl, accessToken: token });
+        await client.selectWorkspace(entry.binding.workspaceId);
+        await client.recordSharedDocumentBinding("unbound", entry.binding.documentId);
+      } catch (error) {
+        console.warn("BloomMD: local unshare completed but audit could not be recorded", error);
+      }
+    }
+    new Notice("BloomMD: Sharing stopped. The local Markdown note and the cloud document were kept.");
   }
 
   async openMarkdownFile(file: TFile) {
@@ -566,6 +674,10 @@ export default class BloomMDPlugin extends Plugin {
       .map((file) => ({ path: file.path, title: file.basename, extension: file.extension.toLowerCase() }));
   }
 
+  getSharedDocumentStatus(localPath: string): ObsidianSharedDocumentEntry["binding"]["connectionState"] | null {
+    return this.sharedDocumentBindings.find((entry) => entry.localPath === localPath)?.binding.connectionState ?? null;
+  }
+
   getLayout(key: string): PersistedCanvasLayout {
     return this.layouts[key] ?? EMPTY_LAYOUT;
   }
@@ -601,6 +713,9 @@ export default class BloomMDPlugin extends Plugin {
       ?? (storedSettings.preferDesktop === false && storedSettings.preferWeb ? "web" : DEFAULT_SETTINGS.openTarget);
     this.settings = { ...DEFAULT_SETTINGS, ...storedSettings, openTarget: migratedTarget };
     this.layouts = stored?.layouts ?? {};
+    this.sharedDocumentBindings = Array.isArray(stored?.sharedDocumentBindings)
+      ? stored.sharedDocumentBindings.filter(isSharedDocumentEntry)
+      : [];
   }
 
   async saveSettings() {
@@ -611,8 +726,92 @@ export default class BloomMDPlugin extends Plugin {
   }
 
   private async persistData() {
-    const data: BloomMDData = { settings: this.settings, layouts: this.layouts };
+    const data: BloomMDData = { settings: this.settings, layouts: this.layouts, sharedDocumentBindings: this.sharedDocumentBindings };
     await this.saveData(data);
+  }
+
+  private vaultAdapter() {
+    return {
+      readMarkdown: (file: { path: string }) => this.app.vault.read(this.requireMarkdownFile(file.path)),
+      writeMarkdown: async (file: { path: string }, markdown: string) => {
+        await this.app.vault.modify(this.requireMarkdownFile(file.path), markdown);
+      },
+    };
+  }
+
+  private requireMarkdownFile(path: string): TFile {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || file.extension !== "md") throw new Error("LOCAL_MARKDOWN_FILE_NOT_FOUND");
+    return file;
+  }
+
+  private async persistSharedDocumentBinding(localPath: string, binding: ObsidianSharedDocumentEntry["binding"]) {
+    const index = this.sharedDocumentBindings.findIndex((entry) => entry.localPath === localPath);
+    const entry: ObsidianSharedDocumentEntry = { localPath, binding };
+    if (index >= 0) this.sharedDocumentBindings[index] = entry;
+    else this.sharedDocumentBindings.push(entry);
+    await this.persistData();
+    this.refreshOpenBloomMDViews();
+  }
+
+  private async handleVaultRename(file: TFile | TFolder, oldPath: string): Promise<void> {
+    const migrated = migratePersistedPathState({
+      layouts: this.layouts,
+      bindings: this.sharedDocumentBindings,
+    }, {
+      oldPath,
+      newPath: file.path,
+      isFolder: file instanceof TFolder,
+    });
+    if (!migrated.changed) return;
+
+    const sessionsToReconnect = migrated.movedLocalPaths
+      .map(({ oldPath: previousPath, newPath }) => ({ previousPath, newPath, session: this.sharedDocumentSessions.get(previousPath) }))
+      .filter((entry): entry is { previousPath: string; newPath: string; session: ObsidianSharedDocumentSession } => Boolean(entry.session));
+    sessionsToReconnect.forEach(({ previousPath, session }) => {
+      session.disconnect();
+      this.sharedDocumentSessions.delete(previousPath);
+    });
+
+    this.layouts = migrated.layouts;
+    this.sharedDocumentBindings = migrated.bindings;
+    await this.persistData();
+    await Promise.all(sessionsToReconnect.map(async ({ newPath }) => {
+      const renamedFile = this.app.vault.getAbstractFileByPath(newPath);
+      if (renamedFile instanceof TFile && renamedFile.extension === "md") await this.connectSharedDocument(renamedFile);
+    }));
+    this.refreshOpenBloomMDViews();
+  }
+
+  private refreshOpenBloomMDViews() {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD).forEach((leaf) => {
+      if (leaf.view instanceof BloomMDView) leaf.view.refreshSettings();
+    });
+  }
+
+  private async connectSharedDocument(file: TFile): Promise<void> {
+    if (this.sharedDocumentSessions.has(file.path)) return;
+    const entry = this.sharedDocumentBindings.find((candidate) => candidate.localPath === file.path);
+    if (!entry || entry.binding.connectionState === "revoked") return;
+    const token = this.app.secretStorage.getSecret(COLLABORATION_TOKEN_SECRET_ID);
+    if (!token) throw new Error("COLLABORATION_TOKEN_MISSING");
+    const { ObsidianSharedDocumentSession } = await loadSharedDocumentRuntime();
+    const session = new ObsidianSharedDocumentSession({
+      file: { path: file.path, basename: file.basename },
+      binding: entry.binding,
+      vault: this.vaultAdapter(),
+      serverUrl: this.settings.collaborationServerUrl,
+      accessToken: token,
+      onBindingChange: async (binding) => this.persistSharedDocumentBinding(file.path, binding),
+    });
+    this.sharedDocumentSessions.set(file.path, session);
+    try {
+      await session.connect();
+    } catch (error) {
+      this.sharedDocumentSessions.delete(file.path);
+      session.disconnect();
+      throw error;
+    }
   }
 }
 
@@ -641,6 +840,21 @@ class BloomMDSettingTab extends PluginSettingTab {
           desc: "Show a short local Markdown preview inside each mind-map node.",
           control: { type: "toggle", key: "showNodeContent", defaultValue: true },
         },
+        {
+          name: "Collaboration server",
+          desc: "BloomMD app URL used only after you explicitly share a note.",
+          control: { type: "text", key: "collaborationServerUrl", defaultValue: "https://bloommd.app", placeholder: "https://bloommd.app" },
+        },
+        {
+          name: "Collaboration workspace ID",
+          desc: "Optional. Leave empty to use your default BloomMD workspace. The vault path is never sent.",
+          control: { type: "text", key: "collaborationWorkspaceId", defaultValue: "", placeholder: "workspace UUID (optional)" },
+        },
+        {
+          name: "Collaboration access token",
+          desc: "Stored in Obsidian’s secret storage, never in the plugin data file.",
+          action: () => new CollaborationTokenModal(this.app, this.plugin).open(),
+        },
       ],
     }];
   }
@@ -648,6 +862,8 @@ class BloomMDSettingTab extends PluginSettingTab {
   getControlValue(key: string): unknown {
     if (key === "openTarget") return this.plugin.settings.openTarget;
     if (key === "showNodeContent") return this.plugin.settings.showNodeContent;
+    if (key === "collaborationServerUrl") return this.plugin.settings.collaborationServerUrl;
+    if (key === "collaborationWorkspaceId") return this.plugin.settings.collaborationWorkspaceId;
     return undefined;
   }
 
@@ -656,7 +872,44 @@ class BloomMDSettingTab extends PluginSettingTab {
       this.plugin.settings.openTarget = value;
     } else if (key === "showNodeContent" && typeof value === "boolean") {
       this.plugin.settings.showNodeContent = value;
+    } else if (key === "collaborationServerUrl" && typeof value === "string") {
+      this.plugin.settings.collaborationServerUrl = value.trim();
+    } else if (key === "collaborationWorkspaceId" && typeof value === "string") {
+      this.plugin.settings.collaborationWorkspaceId = value.trim();
     }
     return this.plugin.saveSettings();
   }
+}
+
+class CollaborationTokenModal extends Modal {
+  constructor(app: App, private readonly plugin: BloomMDPlugin) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "BloomMD collaboration access token" });
+    let token = "";
+    new Setting(contentEl)
+      .setName("Personal access token")
+      .setDesc("This token stays in Obsidian’s secret storage and is not written into the vault or plugin data.")
+      .addText((text) => text.setPlaceholder("bloom_pat_…").setValue("").onChange((value) => { token = value.trim(); }));
+    new Setting(contentEl)
+      .addButton((button) => button.setButtonText("Store token").setCta().onClick(() => {
+        if (!token) {
+          new Notice("BloomMD: Enter a personal access token first.");
+          return;
+        }
+        this.app.secretStorage.setSecret(COLLABORATION_TOKEN_SECRET_ID, token);
+        new Notice("BloomMD: Collaboration access token stored securely.");
+        this.close();
+      }))
+      .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()));
+  }
+}
+
+function isSharedDocumentEntry(value: unknown): value is ObsidianSharedDocumentEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as { localPath?: unknown; binding?: unknown };
+  return typeof candidate.localPath === "string" && Boolean(candidate.binding);
 }

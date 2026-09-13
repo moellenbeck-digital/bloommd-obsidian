@@ -26,7 +26,7 @@ scripts/sync-obsidian-repo.sh --check <path-to-bloommd-obsidian>
 
 The sync creates the standalone `src/markdown-document.ts` and `src/core-types.ts` snapshots and
 `MIRROR.json`. The latter records the plugin version, canonical Git-SHA, and Core SHA-256 hashes.
-The public checkout generates `bun.lock`, `main.js`, `styles.css`, and `release/<version>/` during
+The public checkout generates `bun.lock`, `main.js`, `shared-runtime.js`, `styles.css`, and `release/<version>/` during
 release; these generated artifacts are not part of the monorepo source.
 
 Run `bun run typecheck`, `bun run test`, `bun run build`, and `bun run release:verify` before a

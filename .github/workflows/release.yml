@@ -38,11 +38,13 @@ jobs:
           subject-path: |
             manifest.json
             main.js
+            shared-runtime.js
             styles.css
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             manifest.json
             main.js
+            shared-runtime.js
             styles.css
           body_path: CHANGELOG.md

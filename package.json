@@ -1,22 +1,23 @@
 {
   "name": "bloommd-obsidian",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "private": true,
   "description": "BloomMD companion plugin for Obsidian",
   "main": "main.js",
   "scripts": {
-    "build": "esbuild src/main.ts src/styles.css --bundle --minify --external:obsidian --format=cjs --target=es2018 --outdir=. --entry-names=[name]",
+    "build": "esbuild src/main.ts src/shared-runtime.ts src/styles.css --bundle --minify --external:obsidian --external:./shared-runtime --format=cjs --target=es2018 --outdir=. --entry-names=[name]",
     "release:verify": "node scripts/release.mjs --verify",
     "release:package": "bun run build && node scripts/release.mjs --package",
     "typecheck": "tsc --noEmit",
-    "test": "bun test src/markdown-document.test.ts src/canvas.test.ts src/history-focus.test.ts"
+    "test": "bun test src/markdown-document.test.ts src/canvas.test.ts src/history-focus.test.ts src/path-migration.test.ts src/shared-document.test.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",
     "dagre": "^0.8.5",
     "lucide-react": "^1.30.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "@types/dagre": "^0.7.54",

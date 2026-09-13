@@ -28,6 +28,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardPaste,
+  Cloud,
   Copy,
   CornerDownRight,
   ExternalLink,
@@ -124,6 +125,7 @@ export interface CanvasProps {
   canUndo: boolean;
   canRedo: boolean;
   showNodeContent: boolean;
+  sharedStatus?: "connected" | "offline" | "conflict" | "revoked" | null;
   actions: CanvasActions;
 }
 
@@ -1513,6 +1515,7 @@ function CanvasInner(props: CanvasProps) {
         </div>
         <span className="bloommd-toolbar-spacer" />
         <div className="bloommd-toolbar-group" aria-label="Editing tools">
+          {props.sharedStatus && <span className={`bloommd-share-status is-${props.sharedStatus}`} title={sharedStatusLabel(props.sharedStatus)}><Cloud size={14} />{sharedStatusLabel(props.sharedStatus)}</span>}
           <SaveState state={saveState} />
           <button type="button" className="bloommd-icon-control" title="Copy selected branches (Cmd/Ctrl+C)" aria-label="Copy selected branches" disabled={selectedIds.size === 0} onClick={copySelection}><Copy size={17} /></button>
           <button type="button" className="bloommd-icon-control" title="Paste branches as children (Cmd/Ctrl+V)" aria-label="Paste branches as children" disabled={!selectedId || copiedBranchIds.length === 0} onClick={pasteSelection}><ClipboardPaste size={17} /></button>
@@ -1632,6 +1635,13 @@ function CanvasInner(props: CanvasProps) {
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
     </div>
   );
+}
+
+function sharedStatusLabel(status: NonNullable<CanvasProps["sharedStatus"]>): string {
+  if (status === "connected") return "Shared · connected";
+  if (status === "offline") return "Shared · offline";
+  if (status === "conflict") return "Shared · conflict needs attention";
+  return "Shared · access revoked";
 }
 
 function BloomMDCanvas(props: CanvasProps) {
