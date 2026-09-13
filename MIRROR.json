@@ -5,7 +5,7 @@
   "canonicalPath": "plugins/obsidian",
   "sourceCommit": "d89e20e8940b7d0f4a777d96df6aa9f28fdc37dc",
   "sourceDirty": false,
-  "sourceManifestSha256": "4a5ba1533c7d6b630139ab2d9cf47fb32eb9387f644d9932d09f1fd3d5781583",
+  "sourceManifestSha256": "b360f7c9e55a47c44fff8f85a2197d6209ca5a44359e06717e5f7cbb9e08b316",
   "pluginVersion": "0.5.9",
   "core": {
     "sourcePath": "packages/core/src/obsidian-markdown.ts",
