@@ -7,7 +7,7 @@
 - The public repository is a generated distribution mirror. Do not add implementation changes or
   pull requests there; user-facing bug reports may be filed as GitHub issues and are implemented in
   the private monorepo.
-- Current synchronized plugin version: `0.5.9`.
+- Current synchronized plugin version: `0.5.10`.
 
 ## Architecture
 
@@ -25,7 +25,8 @@ scripts/sync-obsidian-repo.sh --check <path-to-bloommd-obsidian>
 ```
 
 The sync creates the standalone `src/markdown-document.ts` and `src/core-types.ts` snapshots and
-`MIRROR.json`. The latter records the plugin version, canonical Git-SHA, and Core SHA-256 hashes.
+`MIRROR.json`. The latter records the plugin version, canonical Git-SHA, Core SHA-256 hashes, and a
+hash of the exact static public release snapshot verified before publication.
 The public checkout generates `bun.lock`, `main.js`, `shared-runtime.js`, `styles.css`, and `release/<version>/` during
 release; these generated artifacts are not part of the monorepo source.
 

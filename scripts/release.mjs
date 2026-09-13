@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, rm, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { cp, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -11,6 +11,36 @@ const errors = [];
 
 async function sha256(path) {
   return createHash("sha256").update(await readFile(path)).digest("hex");
+}
+
+async function walk(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if ([".git", "node_modules", "release"].includes(entry.name)) continue;
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await walk(path));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+}
+
+async function releaseSnapshotSha256() {
+  const hash = createHash("sha256");
+  const excluded = new Set(["MIRROR.json", "main.js", "shared-runtime.js", "styles.css", "bun.lock"]);
+  const entries = [];
+  for (const path of await walk(root)) {
+    const relativePath = relative(root, path);
+    if (excluded.has(relativePath) || relativePath.endsWith("/.DS_Store") || relativePath === ".DS_Store") continue;
+    entries.push({ path: relativePath, bytes: await readFile(path) });
+  }
+  for (const entry of entries.sort((left, right) => left.path.localeCompare(right.path))) {
+    hash.update(entry.path);
+    hash.update("\0");
+    hash.update(entry.bytes);
+    hash.update("\0");
+  }
+  return hash.digest("hex");
 }
 
 if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) errors.push("manifest version must be numeric semver without a v prefix");
@@ -48,6 +78,11 @@ try {
   const mirror = JSON.parse(await readFile(join(root, "MIRROR.json"), "utf8"));
   if (mirror.mode !== "release-mirror") errors.push("MIRROR.json must describe a release-mirror");
   if (mirror.pluginVersion !== manifest.version) errors.push("MIRROR.json and manifest.json versions differ");
+  if (!/^[a-f0-9]{64}$/.test(mirror.releaseSnapshotSha256 ?? "")) {
+    errors.push("MIRROR.json is missing a valid release snapshot hash");
+  } else if (await releaseSnapshotSha256() !== mirror.releaseSnapshotSha256) {
+    errors.push("MIRROR.json does not attest to the exact public release snapshot");
+  }
   if (mirror.sourceDirty === true) {
     const message = "MIRROR.json was generated from a dirty monorepo checkout";
     if (process.env.BLOOMMD_REQUIRE_CLEAN_MIRROR === "1" || process.env.CI === "true") errors.push(message);

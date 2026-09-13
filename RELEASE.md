@@ -15,7 +15,8 @@ mirror sync, these generated files are created from the canonical Core sources:
 
 - `src/markdown-document.ts` — standalone snapshot of `packages/core/src/obsidian-markdown.ts`;
 - `src/core-types.ts` — standalone snapshot of `packages/core/src/types.ts`;
-- `MIRROR.json` — source commit, version, and SHA-256 evidence for both snapshots.
+- `MIRROR.json` — source commit, version, Core snapshot hashes, and a SHA-256 attestation of the
+  exact static public release snapshot.
 
 The public package removes the monorepo-only `@bloommd/core: workspace:*` dependency. It must never
 be edited by hand. `bun.lock`, `main.js`, `shared-runtime.js`, `styles.css`, and `release/<version>/` in the public
@@ -55,9 +56,10 @@ clean monorepo commit; the GitHub workflow rejects a mirror generated from a dir
 7. Verify the GitHub release assets and perform the clean-vault/BRAT smoke test.
 
 The public release then has an unambiguous chain: plugin SemVer → public mirror commit/tag →
-`MIRROR.json` source Git-SHA and Core SHA-256 → generated release assets. A change made only in the
-public repository is intentionally not part of the development workflow and is detected by the
-next mirror check.
+`MIRROR.json` source Git-SHA, Core SHA-256, and release-snapshot SHA-256 → generated release assets.
+The public verifier recomputes the snapshot hash, so a stale or subsequently changed mirror
+attestation fails before publication. A change made only in the public repository is intentionally
+not part of the development workflow and is detected by the next mirror check.
 
 ## Deliberate release differences
 
@@ -160,5 +162,12 @@ next mirror check.
 - Persist canvas layout changes whenever the map saves positions, view mode, collapsed branches, or viewport state.
 - Keep layout data outside Markdown and compatible with the existing file/folder rename migration.
 - The exact `0.5.9` tag must be used; earlier release tags remain immutable.
+
+## 0.5.10 mirror-contract patch evidence
+
+- Publishes the unchanged shared-document binding implementation under a new immutable tag after
+  correcting the mirror source-manifest evidence.
+- The release must be generated from a clean canonical commit and independently verified before tagging.
+- The exact `0.5.10` tag must be used; earlier release tags remain immutable.
 
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

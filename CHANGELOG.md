@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.10
+
+BloomMD 0.5.10 is a release-contract patch for the shared-document binding release.
+
+- Publish an immutable release tag whose mirror manifest consistently identifies the reviewed canonical source snapshot.
+- Keep the 0.5.9 shared-document binding and local layout persistence behavior unchanged.
+
 ## 0.5.9
 
 BloomMD 0.5.9 completes a safe handoff for shared notes and keeps local map state durable.
