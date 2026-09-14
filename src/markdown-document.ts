@@ -3,7 +3,7 @@
  *
  * This standalone release snapshot is generated from
  * packages/core/src/obsidian-markdown.ts by the BloomMD mirror sync.
- * Source SHA-256: 7566a15edbffb6fbb8281421b7387d1a4a89446c8cfd8768136fe9eb4617e5be
+ * Source SHA-256: 5955271303f3cb5f37a3e97b82e1f3319333ed6fbb8c4d1d170d97cc82a4bacc
  */
 import type { MindMapNodeKind, MindMapNodeMetadata } from "./core-types";
 
@@ -190,12 +190,13 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
 
     const atx = /^( {0,3})(#{1,6})(?:[\t ]+(.*?))?\s*$/.exec(line);
     if (atx) {
+      const atxMarks = atx[2] ?? "";
       const rawTitle = stripClosingSequence(atx[3] ?? "");
       headings.push({
         line: index,
         endLine: index,
         style: "atx",
-        level: atx[2]!.length,
+        level: atxMarks.length,
         title: stripBloomMetadata(rawTitle),
         indent: atx[1] ?? "",
         persistedId: extractBloomId(rawTitle),
@@ -208,13 +209,14 @@ function parseHeadingLines(lines: string[]): ParsedLine[] {
     // A Setext underline turns the preceding paragraph line into a heading.
     const underline = /^ {0,3}(=+|-+)\s*$/.exec(line);
     if (underline && setextCandidate !== null) {
+      const underlineMarker = underline[1] ?? "";
       const titleLine = lines[setextCandidate] ?? "";
       const rawTitle = titleLine.trim();
       headings.push({
         line: setextCandidate,
         endLine: index,
         style: "setext",
-        level: underline[1]!.startsWith("=") ? 1 : 2,
+        level: underlineMarker.startsWith("=") ? 1 : 2,
         title: stripBloomMetadata(rawTitle),
         indent: /^( {0,3})/.exec(titleLine)?.[1] ?? "",
         persistedId: extractBloomId(rawTitle),

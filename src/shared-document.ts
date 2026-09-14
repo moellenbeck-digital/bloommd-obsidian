@@ -36,10 +36,10 @@ export interface ObsidianSharedDocumentSessionOptions {
   accessToken: string;
   serverUrl: string;
   vault: SharedVaultAdapter;
-  onBindingChange(binding: SharedDocumentBinding): Promise<void> | void;
-  onStatusChange?(state: SharedDocumentConnectionState): void;
-  createClient?(serverUrl: string, accessToken: string): WorkspaceSyncClient;
-  createProvider?(input: ConstructorParameters<typeof SyncProvider>[0]): SharedSyncProvider;
+  onBindingChange: (binding: SharedDocumentBinding) => Promise<void> | void;
+  onStatusChange?: (state: SharedDocumentConnectionState) => void;
+  createClient?: (serverUrl: string, accessToken: string) => WorkspaceSyncClient;
+  createProvider?: (input: ConstructorParameters<typeof SyncProvider>[0]) => SharedSyncProvider;
 }
 
 export interface SharedSyncProvider {

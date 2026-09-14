@@ -7,7 +7,7 @@
 - The public repository is a generated distribution mirror. Do not add implementation changes or
   pull requests there; user-facing bug reports may be filed as GitHub issues and are implemented in
   the private monorepo.
-- Current synchronized plugin version: `0.5.10`.
+- Current synchronized plugin version: `0.5.11`.
 
 ## Architecture
 

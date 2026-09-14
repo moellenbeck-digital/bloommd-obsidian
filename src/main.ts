@@ -55,7 +55,7 @@ type SharedDocumentRuntime = typeof import("./shared-runtime");
  * purely local vault note never has to parse Yjs and the sync protocol.
  */
 function loadSharedDocumentRuntime(): Promise<SharedDocumentRuntime> {
-  return Promise.resolve().then(() => require("./shared-runtime") as SharedDocumentRuntime);
+  return import("./shared-runtime");
 }
 
 interface BloomMDSettings {
@@ -537,8 +537,8 @@ export default class BloomMDPlugin extends Plugin {
     this.addCommand({ id: "visualize-current-note", name: "Visualize current note", callback: () => void this.visualizeCurrentNote() });
     this.addCommand({ id: "open-current-note", name: "Open current note", callback: () => void this.openCurrentNoteInBloomMD() });
     this.addCommand({ id: "visualize-current-folder", name: "Visualize current folder", callback: () => void this.visualizeCurrentFolder() });
-    this.addCommand({ id: "share-current-note", name: "Share current note with BloomMD workspace", callback: () => void this.shareCurrentNote() });
-    this.addCommand({ id: "unshare-current-note", name: "Stop sharing current note with BloomMD workspace", callback: () => void this.unshareCurrentNote() });
+    this.addCommand({ id: "share-current-note", name: "Share current note with workspace", callback: () => void this.shareCurrentNote() });
+    this.addCommand({ id: "unshare-current-note", name: "Stop sharing current note with workspace", callback: () => void this.unshareCurrentNote() });
 
     this.registerEvent(this.app.vault.on("modify", (file) => {
       if (!(file instanceof TFile) || file.extension !== "md") return;

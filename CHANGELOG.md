@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.11
+
+BloomMD 0.5.11 removes the remaining Obsidian Community review warnings from the 0.5.10 release.
+
+- Load the optional collaboration runtime through a native dynamic import instead of `require()`.
+- Keep Obsidian command names concise and remove the redundant plugin name from sharing commands.
+- Use callback function properties and remove unnecessary parser assertions for safer type checking.
+- Keep the local choice modal on Obsidian's `createEl` helpers and add release checks to prevent these regressions.
+
 ## 0.5.10
 
 BloomMD 0.5.10 is a release-contract patch for the shared-document binding release.

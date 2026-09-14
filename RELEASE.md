@@ -170,4 +170,15 @@ not part of the development workflow and is detected by the next mirror check.
 - The release must be generated from a clean canonical commit and independently verified before tagging.
 - The exact `0.5.10` tag must be used; earlier release tags remain immutable.
 
+## 0.5.11 Obsidian review-warning cleanup
+
+- The collaboration runtime is loaded with `import("./shared-runtime")`; the plugin source no longer
+  uses a `require()` style loader.
+- The suggestion modal uses `createEl`, and the release source contains no direct
+  `document.createElement` call.
+- Sharing command names no longer repeat the plugin name already shown by Obsidian.
+- The generated Core snapshot no longer contains the two unnecessary non-null assertions reported
+  for the heading parser, and shared-document callback options use function properties.
+- The release verifier checks these patterns before a public tag is created.
+
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.

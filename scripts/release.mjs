@@ -70,6 +70,40 @@ for (const prohibited of ["posthog-js", "@sentry/browser", "mixpanel-browser", "
   if (dependencies.includes(prohibited)) errors.push(`telemetry dependency ${prohibited} is not allowed`);
 }
 
+const sourceReviewChecks = [
+  {
+    file: "src/main.ts",
+    checks: [
+      [/\brequire\s*\(/, "src/main.ts must use imports instead of require()"],
+      [/\bdocument\.createElement\s*\(/, "src/main.ts must use Obsidian createEl helpers"],
+      [/this\.addCommand\(\{[^\n]*name:\s*["'][^"']*BloomMD/i, "command names must not repeat the plugin name"],
+    ],
+  },
+  {
+    file: "src/markdown-document.ts",
+    checks: [
+      [/atx\[2\]!\./, "the generated heading parser contains an unnecessary assertion"],
+      [/underline\[1\]!\./, "the generated Setext parser contains an unnecessary assertion"],
+    ],
+  },
+  {
+    file: "src/shared-document.ts",
+    checks: [
+      [/^\s+onBindingChange\([^)]*\):/m, "onBindingChange must be a function property"],
+      [/^\s+onStatusChange\?\([^)]*\):/m, "onStatusChange must be a function property"],
+      [/^\s+createClient\?\([^)]*\):/m, "createClient must be a function property"],
+      [/^\s+createProvider\?\([^)]*\):/m, "createProvider must be a function property"],
+    ],
+  },
+];
+
+for (const { file, checks } of sourceReviewChecks) {
+  const source = await readFile(join(root, file), "utf8");
+  for (const [pattern, message] of checks) {
+    if (pattern.test(source)) errors.push(message);
+  }
+}
+
 // The public repository is a generated release mirror. The canonical monorepo plugin does not
 // carry MIRROR.json, so this contract is optional locally and mandatory whenever a public mirror
 // is being verified. The generated Core snapshots are hashed to make accidental source edits
