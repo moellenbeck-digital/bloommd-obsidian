@@ -56,7 +56,7 @@ describe("ObsidianSharedDocumentSession", () => {
         if (url.includes("/api/workspaces")) return json({ workspace: { id: "workspace-1", name: "Team", slug: "team", kind: "team", role: "editor" }, workspaces: [] });
         if (url.endsWith("/api/mindmaps")) return json({ filePath: "Research.md" });
         if (url.includes("/api/sync-ticket")) return json({ websocketUrl: "wss://sync.example/ws/research", expiresAt: "2026-09-13T10:00:00.000Z", permission: "write" });
-        return json({ frontmatter: { id: "document-1" }, storage: { version: 4 } });
+        return json({ frontmatter: { id: "markdown-id" }, storage: { documentId: "document-1", version: 4 } });
       },
     });
 
@@ -99,7 +99,7 @@ describe("ObsidianSharedDocumentSession", () => {
         const url = String(input);
         calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
         if (url.includes("/api/workspaces")) return json({ workspace: { id: "workspace-1", name: "Team", slug: "team", kind: "team", role: "editor" }, workspaces: [] });
-        if (url.includes("/api/mindmaps/Existing.md")) return json({ frontmatter: { id: "document-existing" }, storage: { version: 9 } });
+        if (url.includes("/api/mindmaps/Existing.md")) return json({ frontmatter: { id: "markdown-id" }, storage: { documentId: "document-existing", version: 9 } });
         if (url.includes("/api/sync-ticket")) return json({ websocketUrl: "wss://sync.example/ws/existing", expiresAt: "2026-09-13T10:00:00.000Z", permission: "write" });
         return json({ recorded: true });
       },

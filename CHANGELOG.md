@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.12
+
+BloomMD 0.5.12 fixes shared-document auditing for local Obsidian notes.
+
+- Use the server-issued workspace document UUID for sharing audits instead of the Markdown frontmatter ID.
+- Keep local Markdown IDs independent from workspace records, so ordinary notes can be shared and bound without an avoidable audit failure.
+- Cover both a newly shared note and an existing shared-document binding where the two IDs intentionally differ.
+- Run the standalone mirror's Node tests with a real DOM so the browser-safe Markdown runtime is verified before publication.
+
 ## 0.5.11
 
 BloomMD 0.5.11 removes the remaining Obsidian Community review warnings from the 0.5.10 release.

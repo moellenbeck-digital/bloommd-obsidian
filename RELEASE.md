@@ -182,3 +182,10 @@ not part of the development workflow and is detected by the next mirror check.
 - The release verifier checks these patterns before a public tag is created.
 
 Creating the public repository, publishing the release, and submitting it to Obsidian are external release actions and cannot be represented by local files alone.
+
+## 0.5.12 shared-document audit identity
+
+- Sharing and binding audit events use the server-issued workspace document UUID, not the unrelated Markdown frontmatter ID.
+- Tests explicitly keep those two IDs different for both the new-share and existing-binding flows.
+- The standalone mirror runs its shared-document tests with a small DOM preloader, matching the browser runtime it packages.
+- The exact `0.5.12` tag must be used; earlier release tags remain immutable.
