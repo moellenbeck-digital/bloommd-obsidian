@@ -3,10 +3,10 @@
   "mode": "release-mirror",
   "canonicalRepository": "moellenbeck-digital/BloomMD",
   "canonicalPath": "plugins/obsidian",
-  "sourceCommit": "e1207de6cdb22d67baf6ea15571cc1c010f6614b",
+  "sourceCommit": "100fb9492d4952ea1ca702ed03faa36e1f855994",
   "sourceDirty": false,
   "sourceManifestSha256": "9e3481f37526e5be59a42470558552ee11804794d409cd2a6e9e58541af197a7",
-  "releaseSnapshotSha256": "ab57505dfa49d544e12bc9de9043ea11c955ebbd27b34524002006b33deddf0e",
+  "releaseSnapshotSha256": "ef531ed486ed7a97edb7d56de8ce6dfc7e9b43d60a1eef238e6c8ea619b28ea2",
   "pluginVersion": "0.7.0",
   "core": {
     "sourcePath": "packages/core/src/obsidian-markdown.ts",
