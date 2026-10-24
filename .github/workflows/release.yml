@@ -40,6 +40,7 @@ jobs:
             main.js
             shared-runtime.js
             styles.css
+            LICENSE
       - uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -47,4 +48,5 @@ jobs:
             main.js
             shared-runtime.js
             styles.css
+            LICENSE
           body_path: CHANGELOG.md

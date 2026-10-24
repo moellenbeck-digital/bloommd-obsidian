@@ -1,3 +1,5 @@
+@import "./ink.css";
+
 @import "@xyflow/react/dist/style.css";
 
 .bloommd-view-host {
@@ -7,6 +9,7 @@
 }
 
 .bloommd-react-shell {
+  position: relative;
   container-type: inline-size;
   display: flex;
   flex-direction: column;
@@ -23,9 +26,12 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  row-gap: 6px;
   min-height: 48px;
   padding: 7px 10px;
-  overflow-x: auto;
+  /* Narrow panes (iPad split view) wrap tools onto a second row instead of clipping them. */
+  overflow: visible;
   border-bottom: 1px solid var(--background-modifier-border);
   background: var(--background-primary);
 }
@@ -402,19 +408,29 @@
   opacity: 1;
 }
 
+/*
+ * The action column sits in the gap to the next level on the right, which the layout always keeps
+ * free (110 px), instead of below the node where it covered the next sibling.
+ */
 .bloommd-node-actions {
   position: absolute;
   z-index: 5;
-  top: calc(100% + 7px);
-  left: 50%;
+  top: 50%;
+  left: calc(100% + 12px);
   display: flex;
+  flex-direction: column;
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   background: var(--background-primary);
   box-shadow: var(--shadow-s);
-  transform: translateX(-50%);
+  transform: translateY(-50%);
+}
+
+/* Touch devices use the long-press menu; the floating column would only get in the way. */
+.is-mobile .bloommd-node-actions {
+  display: none;
 }
 
 .bloommd-node-actions button {
@@ -508,6 +524,33 @@
 
 .bloommd-inspector > header > div {
   min-width: 0;
+}
+
+.bloommd-inspector > header > .bloommd-inspector-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+/* Full screen covers toolbar and map so handwriting and long notes get the whole view. */
+.bloommd-inspector.is-fullscreen {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  width: auto;
+  border-left: 0;
+  box-shadow: none;
+}
+
+.bloommd-inspector.is-fullscreen textarea {
+  flex: 1 0 auto;
+  min-height: min(60vh, 640px);
+}
+
+.is-mobile .bloommd-inspector > header .bloommd-icon-control {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
 }
 
 .bloommd-inspector h3 {
@@ -1123,4 +1166,997 @@
   .react-flow__minimap {
     display: none;
   }
+}.bloommd-inspector.is-fullscreen .bloommd-ink-editor {
+  min-height: min(70vh, 900px);
+}
+
+.bloommd-ink-notice {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--text-warning);
+  font-size: 12px;
+}
+
+.bloommd-content-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px 0;
+}
+
+.bloommd-inspector .bloommd-content-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.bloommd-inspector .bloommd-content-tabs > button.is-active {
+  border-color: var(--background-modifier-border);
+  color: var(--text-normal);
+  background: var(--background-secondary);
+}
+
+.bloommd-content-tabs > .bloommd-save-state,
+.bloommd-content-tabs > span:last-child {
+  margin-left: auto;
+}
+
+.bloommd-content-tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: var(--text-on-accent);
+  background: #ff6b35;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.is-mobile .bloommd-inspector .bloommd-content-tabs > button {
+  height: 44px;
+}
+
+.bloommd-ink-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.bloommd-inspector .bloommd-ink-thumb,
+.bloommd-inspector button.bloommd-ink-new {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 104px;
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.bloommd-ink-thumb img,
+.bloommd-ink-thumb .bloommd-ink-preview {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.bloommd-inspector.is-fullscreen .bloommd-ink-list {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.bloommd-inspector.is-fullscreen .bloommd-ink-thumb {
+  height: 200px;
+}
+
+.bloommd-inspector button.bloommd-ink-thumb-edit {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 6px;
+  color: #fff;
+  background: rgba(31, 41, 55, 0.7);
+}
+
+.bloommd-inspector button.bloommd-ink-new {
+  flex-direction: column;
+  gap: 6px;
+  border-style: dashed;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.bloommd-ink-overview .bloommd-inspector-note {
+  margin-top: 12px;
+}
+
+.bloommd-node-drawing {
+  display: block;
+  width: 100%;
+  max-height: 96px;
+  margin-top: 6px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+/* While drawing, the inspector shows only its header, the tabs and the canvas. */
+.bloommd-inspector.is-drawing > :not(header):not(.bloommd-content-tabs):not(.bloommd-ink-editor):not(.bloommd-ink-notice) {
+  display: none;
+}
+
+.bloommd-inspector.is-drawing .bloommd-ink-editor {
+  margin-top: 12px;
+}
+
+/* Touch devices (Obsidian adds .is-mobile on iPad and phones): 44 px targets, no hover-only UI. */
+.is-mobile .bloommd-icon-control {
+  min-width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+}
+
+/* Labelled tools keep their content width; only their minimum size grows for touch. */
+.is-mobile .bloommd-mode-button,
+.is-mobile .bloommd-text-control {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 44px;
+  height: 44px;
+}
+
+.is-mobile .bloommd-node-actions button,
+.is-mobile .bloommd-node-meta-button {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.is-mobile .bloommd-open-inspector {
+  min-height: 44px;
+}
+
+.is-mobile .react-flow__controls-button {
+  width: 44px;
+  height: 44px;
+}
+
+/* On phones the inspector is too narrow as a side panel; it always covers the view. */
+.is-phone .bloommd-inspector {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  width: auto;
+  border-left: 0;
+}
+
+.is-mobile .bloommd-file-picker select {
+  min-height: 44px;
+}
+
+/*
+ * Obsidian's tablet theme pads every button 20 px left and right (".is-tablet button:not(.clickable-icon)"),
+ * which squeezes icon-only controls to a dot. Icons never shrink, and icon-only controls drop that padding.
+ */
+.bloommd-react-shell svg.lucide {
+  flex-shrink: 0;
+}
+
+.is-tablet .bloommd-react-shell button.bloommd-icon-control:not(.clickable-icon),
+.is-tablet .bloommd-react-shell button.bloommd-mode-button:not(.clickable-icon),
+.is-tablet .bloommd-react-shell button.bloommd-ink-button:not(.clickable-icon),
+.is-tablet .bloommd-react-shell button.bloommd-ink-swatch:not(.clickable-icon),
+.is-tablet .bloommd-react-shell button.bloommd-ink-thumb-edit:not(.clickable-icon),
+.is-tablet .bloommd-react-shell button.bloommd-node-meta-button:not(.clickable-icon),
+.is-tablet .bloommd-react-shell .bloommd-node-actions button:not(.clickable-icon),
+.is-tablet .bloommd-react-shell button.react-flow__controls-button:not(.clickable-icon) {
+  padding-inline: 0;
+}
+
+.is-tablet .bloommd-react-shell button.bloommd-mode-button:not(.clickable-icon),
+.is-tablet .bloommd-react-shell button.bloommd-text-control:not(.clickable-icon) {
+  padding-inline: 12px;
+}
+
+/* Concept map: linked notes and free connections. */
+.bloommd-node-note {
+  max-width: 150px;
+  color: #2563eb;
+}
+
+.bloommd-node-note span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.react-flow__edge-path.bloommd-relation-edge,
+.bloommd-relation-edge {
+  stroke: #2563eb;
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+.bloommd-relation-label {
+  position: absolute;
+  padding: 2px 8px;
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: var(--background-primary);
+  font-size: 11px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.bloommd-linked-note-row,
+.bloommd-relation-add,
+.bloommd-relation-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bloommd-inspector button.bloommd-linked-note-open {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  color: #2563eb;
+}
+
+.bloommd-linked-note-open span,
+.bloommd-relation-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bloommd-relation-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.bloommd-relation-target {
+  flex: 1;
+  min-width: 0;
+}
+
+.bloommd-relation-list input {
+  width: 38%;
+}
+
+.bloommd-relation-add select {
+  flex: 1;
+  min-width: 0;
+}
+
+.bloommd-relation-add input {
+  width: 34%;
+}
+
+.is-mobile .bloommd-inspector button.bloommd-linked-note-open,
+.is-mobile .bloommd-link-note-button,
+.is-mobile .bloommd-relation-add select,
+.is-mobile .bloommd-relation-add input,
+.is-mobile .bloommd-relation-list input {
+  min-height: 44px;
+}
+
+.bloommd-inspector button.bloommd-link-note-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  color: #2563eb;
+}
+
+/* Resized nodes: the node fills the size the user gave it and its content grows with it. */
+.bloommd-flow-node.is-sized {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.bloommd-flow-node.is-sized .bloommd-node-label {
+  white-space: normal;
+}
+
+.bloommd-flow-node.is-sized .bloommd-node-preview {
+  flex: 0 1 auto;
+  -webkit-line-clamp: unset;
+}
+
+.bloommd-flow-node.is-sized .bloommd-node-drawing {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+.bloommd-flow-node.is-sized .bloommd-node-meta {
+  margin-top: auto;
+}
+
+.react-flow__resize-control.handle.bloommd-resize-handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #ff6b35;
+  border-radius: 3px;
+  background: var(--background-primary);
+}
+
+.react-flow__resize-control.line.bloommd-resize-line {
+  border-color: rgba(255, 107, 53, 0.55);
+}
+
+/* Touch: a 44 px grab area around each small visible handle. */
+.react-flow__resize-control.handle.bloommd-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.is-mobile .react-flow__resize-control.handle.bloommd-resize-handle {
+  width: 16px;
+  height: 16px;
+}
+
+.is-mobile .react-flow__resize-control.handle.bloommd-resize-handle::after {
+  inset: -14px;
+}
+
+.bloommd-canvas-host {
+  height: 100%;
+}
+
+/*
+ * Focus mode: the canvas host sits on <body> above the workspace but below page previews, modals
+ * and notices, so hover previews and the note picker keep working.
+ */
+.bloommd-canvas-host.is-focus-layer {
+  position: fixed;
+  z-index: calc(var(--layer-popover) - 1);
+  inset: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+  background: var(--background-primary);
+}
+
+.bloommd-presentation-markdown {
+  font-size: 1.05em;
+  line-height: 1.6;
+}
+
+.bloommd-presentation-markdown img,
+.bloommd-presentation-markdown svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.bloommd-presentation-markdown .internal-embed.image-embed img {
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+/* Drawings bring their own background (or none); frames stay neutral. */
+.bloommd-inspector .bloommd-ink-thumb,
+.bloommd-node-drawing {
+  background: var(--background-secondary);
+}
+
+/* Long press armed: the node lifts slightly to show that releasing opens its menu. */
+.bloommd-flow-node.is-press-armed {
+  transform: scale(1.03);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.35), 0 16px 36px rgba(0, 0, 0, 0.25);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+/* Study mode: covered content keeps the node's size so the map does not jump when revealing. */
+.bloommd-flow-node button.bloommd-study-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 8px;
+  border: 1px dashed var(--background-modifier-border-hover);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: repeating-linear-gradient(135deg, var(--background-secondary), var(--background-secondary) 6px, var(--background-primary) 6px, var(--background-primary) 12px);
+  box-shadow: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bloommd-study-bar {
+  position: absolute;
+  z-index: 6;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+
+.bloommd-study-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.is-mobile .bloommd-study-bar button {
+  height: 44px;
+}
+
+/* Learning progress: the study bar stays one row and scrolls sideways in a narrow pane (split view). */
+.bloommd-study-bar {
+  right: 12px;
+  left: 12px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin-inline: auto;
+  transform: none;
+  box-sizing: border-box;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.bloommd-study-bar > * {
+  flex: none;
+}
+
+.bloommd-learn-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bloommd-learn-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bloommd-learn-meter {
+  width: 64px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+}
+
+.bloommd-learn-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--color-green, #30a46c);
+}
+
+.bloommd-learn-status select {
+  height: 28px;
+  font-size: 12px;
+}
+
+.bloommd-learn-exam {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.bloommd-learn-exam input {
+  height: 28px;
+  font-size: 12px;
+}
+
+.is-mobile .bloommd-learn-status select,
+.is-mobile .bloommd-learn-exam input {
+  height: 44px;
+}
+
+/* Self-rating after revealing a node. */
+.bloommd-rate {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.bloommd-flow-node .bloommd-rate button {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+  padding: 0 4px;
+  overflow: hidden;
+  border: 1px solid var(--bloommd-learn);
+  border-radius: 6px;
+  color: var(--text-normal);
+  background: color-mix(in srgb, var(--bloommd-learn) 10%, var(--background-primary));
+  box-shadow: none;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bloommd-flow-node .bloommd-rate button[aria-pressed="true"] {
+  color: var(--text-on-accent, #fff);
+  background: var(--bloommd-learn);
+  font-weight: 600;
+}
+
+.is-mobile .bloommd-flow-node .bloommd-rate button {
+  height: 44px;
+}
+
+/* Level on the map: border, fill tint or badge in the level's color; due nodes get a marker. */
+.bloommd-flow-node.learn-border {
+  outline: 3px solid var(--bloommd-learn);
+  outline-offset: 1px;
+}
+
+.bloommd-flow-node.learn-fill {
+  background: color-mix(in srgb, var(--bloommd-learn) 18%, var(--background-primary));
+}
+
+.bloommd-learn-badge,
+.bloommd-learn-due,
+.bloommd-learn-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bloommd-learn-badge {
+  border: 1px solid var(--bloommd-learn);
+  color: var(--text-normal);
+  background: color-mix(in srgb, var(--bloommd-learn) 22%, var(--background-primary));
+}
+
+.bloommd-learn-due {
+  color: var(--text-on-accent, #fff);
+  background: var(--interactive-accent);
+}
+
+.bloommd-learn-branch {
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.bloommd-flow-node.is-out-of-session {
+  opacity: 0.45;
+}
+
+/* Handwriting on the map: drawn in map coordinates above the nodes, never in the way of clicks. */
+.bloommd-map-ink {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.bloommd-flow-wrap.is-drawing-on-map .react-flow__pane,
+.bloommd-flow-wrap.is-drawing-on-map .react-flow__node {
+  cursor: crosshair;
+}
+
+/* A node picked up by holding the pen on it: lifts like an iPadOS drag. */
+.bloommd-flow-wrap.is-drawing-on-map .react-flow__node.is-pen-held {
+  cursor: grabbing;
+  transform-origin: center;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
+  outline: 2px solid var(--interactive-accent, #fb923c);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+
+.bloommd-ink-editor.bloommd-map-ink-bar {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  max-width: calc(100% - 24px);
+  margin: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 14px;
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  touch-action: none;
+  transition: opacity 160ms ease, box-shadow 160ms ease;
+  will-change: transform;
+}
+
+/* Only the tools scroll (with a finger swipe) when the map is narrow; grip, fold and Done stay put. */
+.bloommd-map-ink-tools {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: inherit;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.bloommd-map-ink-tools::-webkit-scrollbar {
+  display: none;
+}
+
+.bloommd-map-ink-bar.is-vertical .bloommd-map-ink-tools {
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+/* Docked at the left or right edge, the tools stand upright and cover only a narrow strip. */
+.bloommd-ink-editor.bloommd-map-ink-bar.is-vertical {
+  flex-direction: column;
+  max-width: none;
+  max-height: calc(100% - 24px);
+  padding: 8px 6px;
+}
+
+.bloommd-map-ink-bar.is-settling {
+  transition: left 200ms cubic-bezier(0.2, 0.8, 0.2, 1), top 200ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease;
+}
+
+.bloommd-map-ink-bar.is-dragging {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  transition: none;
+}
+
+/* While the pen writes, the tools step back so they do not distract. */
+.is-pen-writing .bloommd-map-ink-bar:not(.is-dragging) {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.bloommd-ink-editor button.bloommd-map-ink-grip {
+  flex: none;
+  color: var(--text-faint);
+  cursor: grab;
+  touch-action: none;
+}
+
+.bloommd-ink-editor button.bloommd-map-ink-grip:active {
+  cursor: grabbing;
+}
+
+.bloommd-map-ink-bar.is-vertical .bloommd-map-ink-grip svg {
+  transform: rotate(90deg);
+}
+
+.bloommd-ink-editor .bloommd-map-ink-current {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+}
+
+.bloommd-ink-editor span.bloommd-ink-swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 4px;
+  border: 2px solid var(--background-primary);
+  border-radius: 999px;
+  background-color: var(--bloommd-swatch);
+  box-shadow: 0 0 0 2px #ff6b35;
+}
+
+.bloommd-map-ink-bar > *:not(.bloommd-map-ink-tools),
+.bloommd-map-ink-tools > * {
+  flex: none;
+}
+
+.bloommd-map-ink-bar.is-vertical .bloommd-ink-done span {
+  display: none;
+}
+
+.bloommd-map-ink-status {
+  position: absolute;
+  z-index: 11;
+  bottom: 62px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  color: var(--text-error);
+  background: var(--background-primary);
+  box-shadow: var(--shadow-s);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+
+.bloommd-map-ink-status button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.is-mobile .bloommd-map-ink-status button {
+  height: 44px;
+}
+
+.bloommd-map-notice {
+  position: absolute;
+  z-index: 11;
+  bottom: 18px;
+  left: 50%;
+  padding: 8px 14px;
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  box-shadow: var(--shadow-s);
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+
+/* Who does what by when: due date, responsible person and decision state on a node. */
+.bloommd-task-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.bloommd-task-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--background-modifier-hover, rgba(0, 0, 0, 0.06));
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.bloommd-task-fact.is-overdue {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--text-error, #dc2626);
+  font-weight: 600;
+}
+
+.bloommd-task-fact.is-decision.is-accepted {
+  background: rgba(22, 163, 74, 0.14);
+  color: #15803d;
+}
+
+.bloommd-task-fact.is-decision.is-rejected {
+  background: rgba(107, 114, 128, 0.16);
+  text-decoration: line-through;
+}
+
+.bloommd-task-fact.is-decision.is-proposed {
+  background: rgba(251, 146, 60, 0.16);
+  color: #c2410c;
+}
+
+.bloommd-map-notice.has-undo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 14px;
+}
+
+.bloommd-map-notice .bloommd-map-notice-undo {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.is-mobile .bloommd-ink-editor .bloommd-map-ink-current {
+  width: 44px;
+  height: 44px;
+}
+
+/* Agent panel: proposals, requests, history, rights. */
+.bloommd-agent-ribbon.has-badge {
+  position: relative;
+}
+
+.bloommd-agent-ribbon.has-badge::after {
+  content: attr(data-count);
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+
+.bloommd-agent-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.bloommd-agent-tabs button.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.bloommd-agent-card {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.bloommd-agent-card p {
+  margin: 6px 0;
+  white-space: pre-wrap;
+}
+
+.bloommd-agent-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.bloommd-agent-meta,
+.bloommd-agent-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+button.bloommd-agent-path {
+  height: auto;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  text-align: left;
+  white-space: normal;
+}
+
+.bloommd-agent-diff {
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.bloommd-agent-diff [data-mark="+"] { color: var(--color-green); }
+.bloommd-agent-diff [data-mark="-"] { color: var(--color-red); }
+.bloommd-agent-diff [data-mark="~"] { color: var(--color-orange); }
+
+.bloommd-agent-card pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: var(--font-ui-small);
+}
+
+.bloommd-agent-conflict {
+  padding: 6px 8px;
+  border-left: 3px solid var(--color-orange);
+  background: var(--background-secondary);
+}
+
+.bloommd-agent-status {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.bloommd-agent-status.is-answered { color: var(--color-green); }
+.bloommd-agent-status.is-failed { color: var(--color-red); }
+
+.bloommd-agent-question { font-style: italic; }
+
+.bloommd-agent-answer {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.bloommd-agent-actions,
+.bloommd-agent-ask {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.bloommd-agent-modal textarea {
+  width: 100%;
+}
+
+.is-mobile .bloommd-agent button,
+.is-mobile .bloommd-agent select,
+.is-mobile .bloommd-agent input,
+.is-mobile .bloommd-agent summary,
+.is-mobile .bloommd-agent-modal button {
+  min-height: 44px;
+}
+
+/* Nodes the agent changed since the map was last opened. */
+.bloommd-flow-node.is-agent-changed::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--background-primary);
+  border-radius: 50%;
+  background: var(--color-purple);
 }

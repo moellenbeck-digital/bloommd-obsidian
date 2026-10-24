@@ -5,5 +5,7 @@
  * restores an existing shared binding. Keeping Yjs and its WebSocket protocol out of `main.js`
  * preserves the normal local-only plugin's release-size budget.
  */
+import "./structured-clone-fallback";
+
 export { ObsidianSharedDocumentSession } from "./shared-document";
 export { WorkspaceSyncClient } from "./shared-dependencies";

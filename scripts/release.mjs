@@ -45,9 +45,18 @@ async function releaseSnapshotSha256() {
 
 if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) errors.push("manifest version must be numeric semver without a v prefix");
 if (packageJson.version !== manifest.version) errors.push("package.json and manifest.json versions differ");
+if (packageJson.license !== "MIT") errors.push("package.json license must be MIT");
 if (versions[manifest.version] !== manifest.minAppVersion) errors.push("versions.json does not map the release to minAppVersion");
 if (manifest.id !== "bloommd") errors.push("manifest id must remain bloommd");
-if (manifest.isDesktopOnly !== true) errors.push("mobile support must not be advertised before the mobile test matrix passes");
+if (manifest.isDesktopOnly !== true) {
+  // Mobile support may only ship once the touch matrix passed for exactly this version. QA and beta
+  // builds for that very test opt in explicitly.
+  const matrix = await readFile(join(root, "MOBILE-MATRIX.md"), "utf8").catch(() => "");
+  const verified = matrix.split("\n").some((line) => line.trim() === `Verified plugin version: ${manifest.version}`);
+  if (!verified && process.env.BLOOMMD_ALLOW_UNVERIFIED_MOBILE !== "1") {
+    errors.push(`mobile support requires MOBILE-MATRIX.md with "Verified plugin version: ${manifest.version}" after the touch matrix passed (BLOOMMD_ALLOW_UNVERIFIED_MOBILE=1 is only for QA and beta builds)`);
+  }
+}
 
 for (const file of ["main.js", "shared-runtime.js", "manifest.json", "styles.css", "icon.png", "README.md", "LICENSE", "PRIVACY.md", "CHANGELOG.md"]) {
   try {
@@ -57,6 +66,9 @@ for (const file of ["main.js", "shared-runtime.js", "manifest.json", "styles.css
     errors.push(`${file} is missing`);
   }
 }
+
+const licenseText = await readFile(join(root, "LICENSE"), "utf8").catch(() => "");
+if (!licenseText.startsWith("MIT License")) errors.push("LICENSE must contain the MIT License");
 
 try {
   const bundle = await stat(join(root, "main.js"));
@@ -123,7 +135,7 @@ try {
     else console.warn(`warning: ${message}`);
   }
 
-  for (const entry of [mirror.core, mirror.coreTypes]) {
+  for (const entry of [mirror.core, mirror.coreTypes, mirror.agentLedger]) {
     if (!entry?.generatedPath || !entry.generatedSha256 || !entry.sourceSha256) {
       errors.push("MIRROR.json is missing generated Core hash metadata");
       continue;

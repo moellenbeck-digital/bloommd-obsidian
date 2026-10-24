@@ -1,6 +1,6 @@
 # Obsidian Release Process
 
-Obsidian expects `manifest.json`, `README.md`, the license, and the optional `icon.png` at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix. GitHub releases attach the plugin runtime files: `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css`; `icon.png` stays at the repository root for directory branding.
+Obsidian expects `manifest.json`, `README.md`, the license, and the optional `icon.png` at the root of a public plugin repository. Release tags must exactly match the version, without a `v` prefix. GitHub releases attach the plugin runtime files: `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css`, plus `LICENSE` (MIT); `icon.png` stays at the repository root for directory branding.
 
 ## Repository topology
 
@@ -66,6 +66,10 @@ not part of the development workflow and is detected by the next mirror check.
 - The canonical monorepo uses React 19. The standalone public package is normalized to React 18.3,
   matching the reviewed 0.5.4 release line and avoiding the dynamic script resources previously
   detected in Obsidian's plugin review. This is a packaging constraint, not a second implementation.
+- Both the monorepo and the public build alias `react`/`react-dom` to `preact/compat` (see the
+  `build` script), so neither React line is bundled into `main.js`; the React dependencies remain
+  for typings and `@xyflow/react`'s peer contract. Mirror and monorepo therefore emit the same
+  renderer.
 - The public package has no `@bloommd/core: workspace:*` dependency. Its generated files are the
   exact Core snapshot recorded by `MIRROR.json`.
 - The plugin remains desktop-only and keeps its Obsidian-specific Vault/View/settings boundary;
@@ -80,7 +84,8 @@ not part of the development workflow and is detected by the next mirror check.
 5. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
 6. Push the dedicated repository and create an exact version tag such as `0.5.0`.
 7. Verify the GitHub release contains `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css`, and verify `icon.png` remains at the repository root.
-8. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
+8. Verify `package.json` and the release snapshot identify the MIT license.
+9. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
 
 ## 0.5.0 public beta evidence
 
@@ -91,19 +96,19 @@ not part of the development workflow and is detected by the next mirror check.
 
 ## 0.5.1 patch evidence
 
-- Fixes Issue #169: one `Tab` press can no longer start duplicate child mutations for the same node.
+- Fixes Issue [Archiv #169](https://github.com/moellenbeck-digital/BloomMD-archiv/issues/169): one `Tab` press can no longer start duplicate child mutations for the same node.
 - The patch release keeps the `0.5.0` tag immutable and uses the exact tag `0.5.1`.
 
 ## 0.5.2 patch evidence
 
-- Fixes Issue #192: newly created nodes can be named directly in the inspector.
+- Fixes Issue #61: newly created nodes can be named directly in the inspector.
 - The title field focuses and selects the default `New node` title automatically.
 - Title changes use the existing conflict-safe Markdown roundtrip and preserve node content and metadata.
 - The exact `0.5.2` tag is used; earlier release tags remain immutable.
 
 ## 0.5.3 patch evidence
 
-- Fixes Issue #193: Obsidian community-directory review blockers are addressed.
+- Fixes Issue [Archiv #193](https://github.com/moellenbeck-digital/BloomMD-archiv/issues/193): Obsidian community-directory review blockers are addressed.
 - Leaves are no longer detached from their user-selected workspace locations during plugin unload.
 - Uses Obsidian's native `ConfirmationModal`, command naming rules, declarative settings API, and `await`ed workspace navigation.
 - Raises `minAppVersion` to `1.13.0`, which is the minimum for the APIs used by this release.
@@ -135,7 +140,7 @@ not part of the development workflow and is detected by the next mirror check.
 ## 0.5.7 keyboard and focus parity evidence
 
 - Aligns Obsidian node creation, inline rename, deletion, navigation, and history focus behavior
-  with the Web/Desktop interaction contract tracked in BloomMD issue #189.
+  with the Web/Desktop interaction contract tracked in BloomMD issue [Archiv #189](https://github.com/moellenbeck-digital/BloomMD-archiv/issues/189).
 - Adds stable `data-node-id` and treeitem semantics for map and outline focus restoration.
 - The exact `0.5.7` tag must be used; earlier release tags remain immutable.
 

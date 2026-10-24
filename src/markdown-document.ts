@@ -3,9 +3,9 @@
  *
  * This standalone release snapshot is generated from
  * packages/core/src/obsidian-markdown.ts by the BloomMD mirror sync.
- * Source SHA-256: 5955271303f3cb5f37a3e97b82e1f3319333ed6fbb8c4d1d170d97cc82a4bacc
+ * Source SHA-256: 79d5701c3ca17735f2da0ba8318af49d5b11b87d2558432df05af9e53c0ae8a2
  */
-import type { MindMapNodeKind, MindMapNodeMetadata } from "./core-types";
+import type { MindMapNodeKind, MindMapNodeMetadata, MindMapNodeRelation } from "./core-types";
 
 export type MarkdownNodeKind = Exclude<MindMapNodeKind, "workspace" | "folder">;
 export type MarkdownNodeMetadata = Omit<MindMapNodeMetadata, "kind"> & { kind: MarkdownNodeKind };
@@ -76,6 +76,22 @@ function extractBloomId(title: string): string | null {
 
 const NODE_KINDS = new Set<MarkdownNodeKind>(["topic", "portal", "web", "file", "pdf", "source", "task", "decision"]);
 
+/**
+ * Keeps only well-formed relations. Duplicated in both Markdown parsers on purpose: the Obsidian
+ * mirror snapshots obsidian-markdown.ts standalone, and both must preserve the same fields or one
+ * app would silently drop what the other wrote.
+ */
+function parseRelations(value: unknown): { relations: MindMapNodeRelation[] } | Record<string, never> {
+  if (!Array.isArray(value)) return {};
+  const relations = value.flatMap((entry): MindMapNodeRelation[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const { target, label } = entry as Record<string, unknown>;
+    if (typeof target !== "string" || !target.trim()) return [];
+    return [{ target, ...(typeof label === "string" && label.trim() ? { label } : {}) }];
+  });
+  return relations.length > 0 ? { relations } : {};
+}
+
 function parseNodeMetadata(title: string): MarkdownNodeMetadata | undefined {
   const value = title.match(/<!--\s*bloommd:meta=(\{.*\})\s*-->/i)?.[1];
   if (!value) return undefined;
@@ -96,6 +112,10 @@ function parseNodeMetadata(title: string): MarkdownNodeMetadata | undefined {
       ...(typeof record.citation === "string" ? { citation: record.citation } : {}),
       ...(record.status === "open" || record.status === "in_progress" || record.status === "done" ? { status: record.status } : {}),
       ...(record.decision === "proposed" || record.decision === "accepted" || record.decision === "rejected" ? { decision: record.decision } : {}),
+      ...(typeof record.note === "string" && record.note.trim() ? { note: record.note } : {}),
+      ...(typeof record.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(record.due) ? { due: record.due } : {}),
+      ...(typeof record.assignee === "string" && record.assignee.trim() ? { assignee: record.assignee.trim().slice(0, 120) } : {}),
+      ...parseRelations(record.relations),
     };
   } catch (error) {
     console.warn("BloomMD: ignored malformed node metadata", error);
@@ -365,7 +385,8 @@ export function updateHeadingContent(markdown: string, id: string, content: stri
 
 export function updateHeadingMetadata(markdown: string, id: string, metadata: MarkdownNodeMetadata | undefined): string {
   const node = requireHeading(markdown, id);
-  if (metadata?.kind === "topic") metadata = undefined;
+  // A plain topic needs no comment; a topic that links a note or other nodes keeps its metadata.
+  if (metadata?.kind === "topic" && !metadata.note && !metadata.relations?.length) metadata = undefined;
   const { lines, eol } = splitMarkdown(markdown);
   const source = lines[node.startLine] ?? "";
   const withoutMetadata = source.replace(/\s*<!--\s*bloommd:meta=[\s\S]*?-->/gi, "").trimEnd();

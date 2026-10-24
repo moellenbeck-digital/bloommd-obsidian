@@ -1,0 +1,249 @@
+/**
+ * GENERATED FILE — DO NOT EDIT.
+ * Snapshot of packages/ink/src/ink.css by the BloomMD mirror sync.
+ * Source SHA-256: ff43f54aed01a518a8b7c30f769ced305876d6abab73b156dc0a363b1c27551d
+ */
+/*
+ * Handwriting editor (bloommd-ink), shared by the Obsidian plugin and the BloomMD apps.
+ * Colours follow Obsidian's theme variables where present and fall back to BloomMD's light theme.
+ */
+
+/* Handwriting editor. The paper stays white in every theme so ink matches the saved SVG. */
+.bloommd-ink-editor {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 360px;
+  margin: 0 16px 16px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--background-secondary, #f4f4f5);
+}
+
+.bloommd-ink-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--background-modifier-border, #e5e7eb);
+}
+
+.bloommd-ink-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.bloommd-ink-spacer {
+  flex: 1;
+}
+
+.bloommd-ink-editor button.bloommd-ink-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted, #6b7280);
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.bloommd-ink-editor button.bloommd-ink-button.is-active {
+  border-color: rgba(255, 107, 53, 0.45);
+  color: #ff6b35;
+  background: rgba(255, 107, 53, 0.1);
+}
+
+.bloommd-ink-editor button.bloommd-ink-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bloommd-ink-size span {
+  display: block;
+  width: 16px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.bloommd-ink-size.is-fine span { height: 2px; }
+.bloommd-ink-size.is-medium span { height: 4px; }
+.bloommd-ink-size.is-bold span { height: 7px; }
+
+.bloommd-ink-editor button.bloommd-ink-swatch {
+  width: 28px;
+  height: 28px;
+  margin: 4px;
+  padding: 0;
+  border: 2px solid var(--background-primary, #ffffff);
+  border-radius: 999px;
+  background-color: var(--bloommd-swatch);
+  box-shadow: 0 0 0 1px var(--background-modifier-border, #e5e7eb);
+  cursor: pointer;
+}
+
+.bloommd-ink-editor button.bloommd-ink-swatch.is-active {
+  box-shadow: 0 0 0 2px #ff6b35;
+}
+
+.bloommd-ink-editor button.bloommd-ink-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: #fff;
+  background: #ff6b35;
+  cursor: pointer;
+}
+
+.bloommd-ink-surface {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  outline: none;
+  /* The editor implements pan, pinch and drawing itself; the browser must not scroll or zoom. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  background-color: #ffffff;
+  background-image: radial-gradient(circle, rgba(31, 41, 55, 0.14) 1px, transparent 1.2px);
+  cursor: crosshair;
+}
+
+.bloommd-ink-surface.is-tool-eraser {
+  cursor: cell;
+}
+
+.bloommd-ink-svg {
+  display: block;
+  position: absolute;
+  inset: 0;
+}
+
+.is-mobile .bloommd-ink-editor button.bloommd-ink-button,
+.is-mobile .bloommd-ink-editor button.bloommd-ink-done {
+  min-width: 44px;
+  height: 44px;
+}
+
+.is-mobile .bloommd-ink-editor button.bloommd-ink-swatch {
+  width: 32px;
+  height: 32px;
+  margin: 6px;
+}
+
+.bloommd-ink-lasso {
+  fill: rgba(255, 107, 53, 0.06);
+  stroke: #ff6b35;
+}
+
+.bloommd-ink-selection > rect:first-child {
+  fill: none;
+  stroke: #ff6b35;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
+.bloommd-ink-handle {
+  fill: #ffffff;
+  stroke: #ff6b35;
+  stroke-width: 2;
+}
+
+.bloommd-ink-surface.is-tool-lasso {
+  cursor: default;
+}
+
+.bloommd-ink-link rect {
+  fill: rgba(37, 99, 235, 0.06);
+  stroke: none;
+  cursor: pointer;
+}
+
+.bloommd-ink-link:hover rect,
+.bloommd-ink-link:focus-visible rect {
+  fill: rgba(37, 99, 235, 0.14);
+}
+
+.bloommd-ink-link line {
+  stroke: #2563eb;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.bloommd-ink-link-chip {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  border-radius: 999px;
+  background: #eff6ff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.bloommd-ink-link-chip > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  color: #1d4ed8;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.bloommd-ink-link-chip > button + button {
+  padding: 0 6px;
+  border-left: 1px solid rgba(37, 99, 235, 0.25);
+}
+
+.is-mobile .bloommd-ink-link-chip > button {
+  height: 32px;
+}
+
+/* Paper choice: the surface matches the saved drawing; dots stay visible on dark paper. */
+.bloommd-ink-surface.is-dark {
+  background-image: radial-gradient(circle, rgba(243, 244, 246, 0.16) 1px, transparent 1.2px);
+}
+
+.bloommd-ink-surface.is-transparent {
+  background-color: var(--background-primary, #ffffff);
+  background-image: radial-gradient(circle, var(--background-modifier-border, #e5e7eb) 1px, transparent 1.2px);
+}
+
+/* Text field on a drawing: plain text the size of the ink, so Scribble writes straight into place. */
+.bloommd-ink-editor textarea.bloommd-ink-text-input {
+  position: absolute;
+  z-index: 3;
+  min-width: 180px;
+  min-height: 1.4em;
+  margin: 0;
+  padding: 0 2px;
+  overflow: hidden;
+  border: 1px dashed #ff6b35;
+  border-radius: 4px;
+  outline: none;
+  background: rgba(255, 107, 53, 0.06);
+  box-shadow: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  resize: none;
+  field-sizing: content;
+}

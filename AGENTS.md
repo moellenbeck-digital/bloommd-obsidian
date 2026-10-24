@@ -6,8 +6,8 @@
 - Public distribution mirror: `moellenbeck-digital/bloommd-obsidian`.
 - The public repository is a generated distribution mirror. Do not add implementation changes or
   pull requests there; user-facing bug reports may be filed as GitHub issues and are implemented in
-  the private monorepo.
-- Current synchronized plugin version: `0.5.11`.
+  the canonical monorepo.
+- Current synchronized plugin version: `0.5.12`.
 
 ## Architecture
 
@@ -16,6 +16,17 @@
 - Obsidian Vault, View, settings, and UI behavior stays in this package.
 - The monorepo uses React 19. The public standalone release is packaged with React 18.3 to retain
   the reviewed Obsidian release behavior.
+- `main.js` does not bundle React at all: the `build` script aliases `react` and `react-dom` (and
+  their `jsx-runtime`/`client` subpaths) to `preact/compat`, which saves ~180 KB of the 600 KiB
+  release budget. The code is still written and typechecked against `@types/react`; the plugin
+  tests preload `scripts/test-preact.ts` so rendering tests use the same renderer that ships. Avoid
+  React-19-only APIs that preact/compat 10 lacks (`use`, `useActionState`, `useOptimistic`, `ref`
+  as a plain prop on function components, ref callbacks returning a cleanup, `<Context>` as a
+  provider). preact attaches event handlers to the element itself rather than delegating to the
+  root, so `stopPropagation()` in a JSX handler also hides the event from native listeners on
+  ancestors (d3-zoom/d3-drag, Obsidian) — use `nodrag`/`nopan` or capture listeners deliberately.
+- `src/bundle-size.test.ts` builds the exact release bundle, prints its size and largest inputs,
+  and fails above the budget or if React sneaks back in.
 
 ## Mirror and release
 

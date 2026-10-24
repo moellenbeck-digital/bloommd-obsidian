@@ -1,7 +1,7 @@
 /**
  * GENERATED FILE — DO NOT EDIT.
  * Snapshot of packages/core/src/types.ts.
- * Source SHA-256: b388139887ca53b5b39d78c302f51ae2098b67e1ecc694dde2b1fb8593789e08
+ * Source SHA-256: 2ef5eec3c48850953e264f5a653065d0f1d9033edfdb23ed74eb6320b2742c55
  */
 export interface MindMapFrontmatter {
   title: string;
@@ -27,6 +27,13 @@ export type MindMapNodeKind =
   | "task"
   | "decision";
 
+/** A concept-map connection to another node of the same map, independent of the heading hierarchy. */
+export interface MindMapNodeRelation {
+  /** `bloommd:id` of the related node. */
+  target: string;
+  label?: string;
+}
+
 export interface MindMapNodeMetadata {
   kind: MindMapNodeKind;
   url?: string;
@@ -38,6 +45,13 @@ export interface MindMapNodeMetadata {
   citation?: string;
   status?: "open" | "in_progress" | "done";
   decision?: "proposed" | "accepted" | "rejected";
+  /** Link text of an Obsidian/vault note this node stands for; details live in that note. */
+  note?: string;
+  /** Due date of a task, `YYYY-MM-DD`. */
+  due?: string;
+  /** Who is responsible for a task or decision, as written by people (a name, not an account id). */
+  assignee?: string;
+  relations?: MindMapNodeRelation[];
 }
 
 export interface MindMapNode {

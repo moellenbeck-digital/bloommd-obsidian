@@ -1,9 +1,14 @@
+import "./structured-clone-fallback";
+import "./preact-scheduling";
 import {
   App,
-  ConfirmationModal,
+  Component,
   FileSystemAdapter,
+  FuzzySuggestModal,
   ItemView,
+  MarkdownRenderer,
   MarkdownView,
+  Menu,
   Modal,
   Notice,
   Plugin,
@@ -14,7 +19,9 @@ import {
   TFolder,
   Setting,
   WorkspaceLeaf,
+  type EventRef,
   type SettingDefinitionItem,
+  type SettingDefinitionRender,
 } from "obsidian";
 import {
   addChildHeading,
@@ -33,6 +40,7 @@ import {
   type MarkdownHeadingNode,
 } from "./markdown-document";
 import {
+  FOCUS_MODE_EVENT,
   createCanvasMount,
   type BacklinkEntry,
   type CanvasHeading,
@@ -41,12 +49,24 @@ import {
   type ResourceEntry,
 } from "./canvas";
 import { historyFocusId } from "./history-focus";
+import { conflictFileName, linkDrawingIntoNode, saveDrawing } from "./drawing-save";
+import { linkTargetsPath, parseInkSvg, retargetInkLinks, serializeInkSvg } from "./ink-document";
+import { appendSvgEmbed, ensureWikiLink, inkFileName } from "./ink-embeds";
+import { BLOOMMD_DOWNLOAD_URL, desktopNodeId, desktopOpenUrl, mobileOpenUrl } from "./open-app";
+import { desktopDeps, openNoteInDesktop } from "./desktop-handoff";
+import { MAP_INK_PROPERTY, createLinkedMapInk, mapInkLink, retargetLinkedNotes, withLinkedNote } from "./concept-map";
 import { migratePersistedPathState } from "./path-migration";
+import { LEARNING_FOLDER, emptyLearningFile, learningFilePath, learningKey, normalizeLearningSettings, rateEntry, type LearningFile, type LearningSettings, type StudyOrder } from "./learning";
+import { LearningStore } from "./learning-store";
+import { STUDY_ORDERS } from "./learning-panel";
+import { AgentHub, confirmAction } from "./agent-view";
 import type { ObsidianSharedDocumentEntry, ObsidianSharedDocumentSession } from "./shared-document";
 
 const VIEW_TYPE_BLOOMMD = "bloommd-mindmap-view";
 const BLOOMMD_WEB_DEMO = "https://bloommd.io/demo";
 const COLLABORATION_TOKEN_SECRET_ID = "bloommd-collaboration-token";
+/** Folder renames arrive as one event per note; wait for the burst before scanning the vault. */
+const NOTE_RETARGET_DELAY_MS = 300;
 
 type SharedDocumentRuntime = typeof import("./shared-runtime");
 
@@ -54,15 +74,26 @@ type SharedDocumentRuntime = typeof import("./shared-runtime");
  * Collaboration is an opt-in feature. The runtime is a second CommonJS artifact so opening a
  * purely local vault note never has to parse Yjs and the sync protocol.
  */
+/**
+ * Obsidian mobile cannot load a second plugin script, so shared mode is desktop-only for now; local
+ * editing, handwriting and maps work everywhere.
+ */
+const SHARED_MODE_UNAVAILABLE = "BloomMD: Shared mode is not available in Obsidian mobile yet. Your note stays fully editable on this device.";
+
 function loadSharedDocumentRuntime(): Promise<SharedDocumentRuntime> {
   return import("./shared-runtime");
 }
 
 interface BloomMDSettings {
   openTarget: "desktop" | "web";
+  /** The BloomMD app is installed on this iPad/iPhone with this vault opened as its folder. */
+  mobileAppInstalled: boolean;
   showNodeContent: boolean;
   collaborationServerUrl: string;
   collaborationWorkspaceId: string;
+  learning: LearningSettings;
+  /** Recorded as reviewer when this person approves or rejects agent proposals. */
+  agentReviewer: string;
 }
 
 interface BloomMDData {
@@ -118,42 +149,62 @@ class SharedDocumentChoiceModal extends SuggestModal<SharedDocumentChoice> {
   }
 }
 
+class NotePickerModal extends FuzzySuggestModal<TFile> {
+  private settled = false;
+
+  constructor(app: App, private readonly sourcePath: string, private readonly resolveNote: (linktext: string | null) => void) {
+    super(app);
+    this.setPlaceholder("Link handwriting to a note…");
+  }
+
+  getItems(): TFile[] {
+    return this.app.vault.getMarkdownFiles();
+  }
+
+  getItemText(file: TFile): string {
+    return file.path.replace(/\.md$/, "");
+  }
+
+  onChooseItem(file: TFile): void {
+    this.finish(this.app.metadataCache.fileToLinktext(file, this.sourcePath, true));
+  }
+
+  onClose(): void {
+    super.onClose();
+    // Obsidian closes a suggest modal before it reports the chosen item, so a cancel is only
+    // certain once the current task has finished.
+    window.setTimeout(() => this.finish(null), 0);
+  }
+
+  private finish(linktext: string | null): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolveNote(linktext);
+  }
+}
+
+function pickNote(app: App, sourcePath: string): Promise<string | null> {
+  return new Promise((resolveNote) => new NotePickerModal(app, sourcePath, resolveNote).open());
+}
+
 function chooseSharedDocument(app: App, choices: SharedDocumentChoice[]): Promise<SharedDocumentChoice | null> {
   return new Promise((resolveChoice) => new SharedDocumentChoiceModal(app, choices, resolveChoice).open());
 }
 
 const DEFAULT_SETTINGS: BloomMDSettings = {
   openTarget: "desktop",
+  mobileAppInstalled: false,
   showNodeContent: true,
   collaborationServerUrl: "https://bloommd.app",
   collaborationWorkspaceId: "",
+  learning: normalizeLearningSettings(undefined),
+  agentReviewer: "",
 };
 
 const EMPTY_LAYOUT: PersistedCanvasLayout = { positions: {}, collapsed: [] };
 
 function confirmDelete(app: App, title: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value: boolean) => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-
-    new ConfirmationModal(app)
-      .setTitle("Delete branch?")
-      .setContent(`Delete "${title}" and its complete branch?`)
-      .addButton((button) => {
-        button
-          .setButtonText("Delete branch")
-          .setDestructive()
-          .setCta()
-          .onClick(() => finish(true));
-      })
-      .addCancelButton("Cancel")
-      .setCloseCallback(() => finish(false))
-      .open();
-  });
+  return confirmAction(app, "Delete branch?", `Delete "${title}" and its complete branch?`, "Delete branch");
 }
 
 function canvasHeadings(nodes: MarkdownHeadingNode[]): CanvasHeading[] {
@@ -239,6 +290,12 @@ class BloomMDView extends ItemView {
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private mutationQueue: Promise<unknown> = Promise.resolve();
+  /** Bumped when the map drawing changes on disk, so the canvas can pick up synced versions. */
+  private mapInkRevision = 0;
+  /** Personal learning progress of the open note (never part of its Markdown). */
+  private learning: LearningFile | null = null;
+  /** Nodes the agent changed since this map was last opened; marked on the map. */
+  private agentChanged = new Set<string>();
 
   constructor(leaf: WorkspaceLeaf, private readonly plugin: BloomMDPlugin) {
     super(leaf);
@@ -257,6 +314,15 @@ class BloomMDView extends ItemView {
   }
 
   async onOpen() {
+    // The map drawing is linked from the frontmatter; re-render once Obsidian has indexed a new link.
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      if (file.path === this.sourceFile?.path) this.renderCanvas();
+    }));
+    this.registerEvent(this.app.vault.on("modify", (file) => {
+      if (!(file instanceof TFile) || file.extension !== "svg" || file.path !== this.mapInkPath(this.sourceFile)) return;
+      this.mapInkRevision += 1;
+      this.renderCanvas();
+    }));
     this.contentEl.empty();
     this.contentEl.addClass("bloommd-view-host");
     this.mount = createCanvasMount(this.contentEl);
@@ -272,7 +338,15 @@ class BloomMDView extends ItemView {
     if (this.sourceFile?.path !== file.path) {
       this.undoStack = [];
       this.redoStack = [];
+      this.learning = null;
     }
+    // Opening a map shows what the agent changed since it was last opened here, then counts as seen.
+    this.agentChanged = new Set();
+    void this.plugin.agent.changedNodes(file.path, markdown).then((ids) => {
+      if (!ids.size || this.sourceFile !== file) return;
+      this.agentChanged = ids;
+      this.renderCanvas();
+    }, (error: unknown) => console.error("BloomMD: agent changes could not be read", error));
     this.sourceFile = file;
     this.scopeFolder = file.parent;
     this.layoutKey = `file:${file.path}`;
@@ -281,9 +355,68 @@ class BloomMDView extends ItemView {
     this.headings = canvasHeadings(tree);
     this.rootId = tree[0]?.id ?? "";
     this.renderCanvas();
+    void this.reloadLearning();
   }
 
+  /** The open note, when the view shows one (folders have no learning progress). */
+  mapFile(): TFile | null {
+    return this.sourceFile;
+  }
+
+  /** Re-reads the progress file, e.g. after it changed on disk or arrived from another device. */
+  async reloadLearning(): Promise<void> {
+    const file = this.sourceFile;
+    if (!file || !this.plugin.settings.learning.enabled) {
+      if (this.learning) {
+        this.learning = null;
+        this.renderCanvas();
+      }
+      return;
+    }
+    try {
+      const loaded = await this.plugin.loadLearning(file);
+      if (this.sourceFile !== file) return;
+      this.learning = loaded;
+      this.renderCanvas();
+    } catch (error) {
+      console.error("BloomMD could not read learning progress", error);
+    }
+  }
+
+  usesLearningFile(path: string): boolean {
+    return Boolean(this.sourceFile) && learningFilePath(this.plugin.learningKey(this.sourceFile!)) === path;
+  }
+
+  /** Changes the progress at once on screen, then merges it into the file on disk. */
+  updateLearning(change: (file: LearningFile) => LearningFile) {
+    const file = this.sourceFile;
+    if (!file) return Promise.resolve();
+    const withPath = (current: LearningFile) => ({ ...change(current), path: file.path });
+    this.learning = withPath(this.learning ?? emptyLearningFile());
+    this.renderCanvas();
+    return this.plugin.learningStore.update(this.plugin.learningKey(file), withPath).then((saved) => {
+      if (this.sourceFile !== file) return;
+      this.learning = saved;
+      this.renderCanvas();
+    }).catch((error: unknown) => {
+      console.error("BloomMD could not save learning progress", error);
+      new Notice("BloomMD: Your learning progress could not be saved. It is kept until the next rating.");
+    });
+  }
+
+  private readonly rateNode = (id: string, level: number) => {
+    const settings = this.plugin.settings.learning;
+    const now = new Date();
+    void this.updateLearning((current) => ({ ...current, entries: { ...current.entries, [id]: rateEntry(current.entries[id], level, settings, now) } }));
+  };
+
+  private readonly setExamDate = (date: string | null) => {
+    const examUpdated = new Date().toISOString();
+    void this.updateLearning(({ examDate: _previous, ...current }) => (date ? { ...current, examDate: date, examUpdated } : { ...current, examUpdated }));
+  };
+
   setFolder(folder: TFolder) {
+    this.learning = null;
     this.sourceFile = null;
     this.scopeFolder = folder;
     this.layoutKey = `folder:${folder.path || "/"}`;
@@ -421,6 +554,180 @@ class BloomMDView extends ItemView {
     return saved ? createdId : null;
   }
 
+  /**
+   * Writes a drawing. Existing files are only replaced when they still match what the editor loaded
+   * (another device may have synced a newer version); new files go to the vault's attachment folder
+   * and are embedded into the node through the same conflict-checked mutation as text edits.
+   * `sourceFile` is the note the drawing was opened from, which may no longer be the one shown.
+   */
+  private async saveInk(sourceFile: TFile, nodeId: string, path: string | null, svg: string, expectedSvg: string | null, conflictOf?: string): Promise<string | null> {
+    const saved = await saveDrawing({
+      replace: async (target, content, expected) => {
+        const file = this.app.vault.getAbstractFileByPath(target);
+        if (!(file instanceof TFile)) throw new Error("The drawing file was moved or deleted.");
+        await this.app.vault.process(file, (current) => {
+          if (expected !== null && current !== expected) throw new Error("This drawing changed outside BloomMD.");
+          return content;
+        });
+      },
+      create: async (fileName, content) => {
+        const target = await this.app.fileManager.getAvailablePathForAttachment(fileName, sourceFile.path);
+        const folder = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
+        if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+        return (await this.app.vault.create(target, content)).path;
+      },
+      link: (content, createdPath) => {
+        const created = createdPath ? this.app.vault.getAbstractFileByPath(createdPath) : null;
+        const link = created instanceof TFile ? this.app.metadataCache.fileToLinktext(created, sourceFile.path, false) : createdPath;
+        return this.linkInkTargets(sourceFile, nodeId, content, (markdown) => (link ? appendSvgEmbed(markdown, link) : markdown));
+      },
+      notify: (message) => new Notice(`BloomMD: ${message}`),
+    }, { path, svg, expectedSvg, conflictOf, noteBasename: sourceFile.basename });
+    if (saved) this.renderCanvas();
+    return saved;
+  }
+
+  /**
+   * Applies `prepare` to the node content and adds `[[target]]` for every note the drawing links to,
+   * so Obsidian's graph, backlinks and rename handling know about handwriting links. Unchanged
+   * content is not rewritten and leaves the undo history alone. Resolves to false when the node is
+   * gone; a note that is no longer shown is updated directly, outside this view's history.
+   */
+  private async linkInkTargets(sourceFile: TFile, nodeId: string, svg: string, prepare: (content: string) => string): Promise<boolean> {
+    const targets = [...new Set(parseInkSvg(svg)?.document.links.map((link) => link.target) ?? [])];
+    let found = false;
+    const transform = (markdown: string) => {
+      const linked = linkDrawingIntoNode(markdown, nodeId, targets, prepare);
+      found = linked.found;
+      return linked.markdown;
+    };
+    if (this.sourceFile?.path !== sourceFile.path) {
+      await this.app.vault.process(sourceFile, transform);
+      return found;
+    }
+    if (transform(this.lastKnownMarkdown) === this.lastKnownMarkdown) return found;
+    const saved = await this.applyMutation(transform);
+    return saved && found;
+  }
+
+  /**
+   * Saves the handwriting drawn on the map. A new drawing becomes `<note> map ink.svg` in the
+   * attachment folder and is linked from the note's frontmatter; later saves only replace a file
+   * that still matches what was loaded. When that file changed elsewhere, the replace fails quietly
+   * and the session retries with `conflictOf`: while the note still links a map drawing, the strokes
+   * are kept as an unlinked "(conflict)" copy beside it and the map shows the other version.
+   */
+  private async saveMapInk(sourceFile: TFile, path: string | null, svg: string, expectedSvg: string | null, conflictOf?: string): Promise<string | null> {
+    if (path) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      try {
+        if (!(file instanceof TFile)) throw new Error("The map drawing was moved or deleted.");
+        await this.app.vault.process(file, (current) => {
+          if (expectedSvg !== null && current !== expectedSvg) throw new Error("The map drawing changed outside BloomMD.");
+          return svg;
+        });
+      } catch (error) {
+        console.warn(`BloomMD did not overwrite ${path}`, error);
+        return null;
+      }
+      return path;
+    }
+    try {
+      if (conflictOf && this.mapInkPath(sourceFile)) {
+        const created = await this.createAttachment(sourceFile, conflictFileName(conflictOf), svg);
+        new Notice(`BloomMD: ${conflictOf} changed outside BloomMD or was moved. The map shows that version; your strokes were kept as ${created}.`);
+        return created;
+      }
+      return await createLinkedMapInk({
+        create: () => this.createAttachment(sourceFile, `${sourceFile.basename} map ink.svg`, svg),
+        link: (created) => this.linkMapInk(sourceFile, created),
+        warn: (message) => new Notice(message),
+      });
+    } catch (error) {
+      this.showError(error);
+      return null;
+    }
+  }
+
+  /** Writes a new file into the attachment folder of `sourceFile` under a free name; resolves to its path. */
+  private async createAttachment(sourceFile: TFile, fileName: string, content: string): Promise<string> {
+    const target = await this.app.fileManager.getAvailablePathForAttachment(fileName, sourceFile.path);
+    const folder = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
+    if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+    return (await this.app.vault.create(target, content)).path;
+  }
+
+  /**
+   * Links the map drawing from the note's frontmatter. It runs in the mutation queue like every
+   * other note edit and becomes an undo step, so the history keeps matching the note on disk.
+   */
+  private linkMapInk(sourceFile: TFile, drawingPath: string): Promise<boolean> {
+    return this.queueMutation(async () => {
+      const drawing = this.app.vault.getAbstractFileByPath(drawingPath);
+      if (!(drawing instanceof TFile)) return false;
+      const link = this.app.metadataCache.fileToLinktext(drawing, sourceFile.path, false);
+      this.writing = true;
+      try {
+        const before = await this.app.vault.read(sourceFile);
+        await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
+          frontmatter[MAP_INK_PROPERTY] = `[[${link}]]`;
+        });
+        if (this.sourceFile !== sourceFile) return true;
+        const after = await this.app.vault.read(sourceFile);
+        if (before !== after) {
+          this.undoStack.push({ before, after });
+          if (this.undoStack.length > 30) this.undoStack.shift();
+          this.redoStack = [];
+        }
+        this.updateFromMarkdown(after);
+        return true;
+      } finally {
+        this.writing = false;
+      }
+    });
+  }
+
+  private mapInkPath(sourceFile: TFile | null): string | null {
+    if (!sourceFile) return null;
+    const link = mapInkLink(this.app.metadataCache.getFileCache(sourceFile)?.frontmatter?.[MAP_INK_PROPERTY]);
+    return link ? this.app.metadataCache.getFirstLinkpathDest(link, sourceFile.path)?.path ?? null : null;
+  }
+
+  /**
+   * Turns part of a sketch into structure: a new child node whose content embeds its own drawing.
+   * Node, title, embed and links are one mutation, so a single map undo removes all of it.
+   */
+  private async createNodeFromInk(parentId: string, svg: string, title: string): Promise<string | null> {
+    const sourceFile = this.sourceFile;
+    if (!sourceFile) return null;
+    try {
+      const target = await this.app.fileManager.getAvailablePathForAttachment(inkFileName(sourceFile.basename), sourceFile.path);
+      const folder = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
+      if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+      const file = await this.app.vault.create(target, svg);
+      const link = this.app.metadataCache.fileToLinktext(file, sourceFile.path, false);
+      const targets = [...new Set(parseInkSvg(svg)?.document.links.map((entry) => entry.target) ?? [])];
+      let createdId: string | null = null;
+      const saved = await this.applyMutation((markdown) => {
+        const added = addChildHeading(markdown, parentId);
+        const parent = findHeading(parseHeadingTree(added), parentId);
+        const child = parent?.children[parent.children.length - 1];
+        if (!child) throw new Error("The new node could not be created.");
+        const renamed = renameHeading(added, child.id, title);
+        const siblings = findHeading(parseHeadingTree(renamed), parentId)?.children ?? [];
+        const renamedChild = siblings[siblings.length - 1];
+        if (!renamedChild) throw new Error("The new node could not be created.");
+        createdId = renamedChild.id;
+        const content = targets.reduce(ensureWikiLink, appendSvgEmbed(this.currentNode(renamed, renamedChild.id).content, link));
+        return updateHeadingContent(renamed, renamedChild.id, content);
+      });
+      return saved ? createdId : null;
+    } catch (error) {
+      this.showError(error);
+      return null;
+    }
+  }
+
   private backlinks(): BacklinkEntry[] {
     if (!this.sourceFile) return [];
     const result: BacklinkEntry[] = [];
@@ -438,7 +745,7 @@ class BloomMDView extends ItemView {
     const editable = Boolean(sourceFile);
     this.mount.render({
       filePath: sourceFile?.path ?? this.layoutKey,
-      headings: this.headings,
+      headings: this.agentChanged.size ? this.headings.map((heading) => (this.agentChanged.has(heading.id) ? { ...heading, agentChanged: true } : heading)) : this.headings,
       rootId: this.rootId,
       files: this.plugin.markdownFiles(this.scopeFolder),
       backlinks: this.backlinks(),
@@ -447,6 +754,13 @@ class BloomMDView extends ItemView {
       canRedo: this.redoStack.length > 0,
       showNodeContent: this.plugin.settings.showNodeContent,
       sharedStatus: sourceFile ? this.plugin.getSharedDocumentStatus(sourceFile.path) : null,
+      mapInkPath: this.mapInkPath(sourceFile),
+      // On iPad and iPhone only the BloomMD app (when installed, see settings) can open the note.
+      canOpenApp: !Platform.isMobile || this.plugin.settings.mobileAppInstalled,
+      mapInkRevision: this.mapInkRevision,
+      learning: sourceFile && this.learning && this.plugin.settings.learning.enabled
+        ? { settings: this.plugin.settings.learning, entries: this.learning.entries, examDate: this.learning.examDate ?? null, rate: this.rateNode, setExamDate: this.setExamDate }
+        : null,
       resources: this.plugin.resourceFiles(this.scopeFolder),
       actions: {
         renameNode: (id, title, expectedTitle) => editable
@@ -505,7 +819,7 @@ class BloomMDView extends ItemView {
         redo: (selectedId) => this.restoreHistory("redo", selectedId),
         persistLayout: (layout) => this.plugin.saveLayout(this.layoutKey, layout),
         openMarkdown: () => { if (sourceFile) void this.plugin.openMarkdownFile(sourceFile); },
-        openBloomMD: () => { if (sourceFile) void this.plugin.openFileInBloomMD(sourceFile); },
+        openBloomMD: (nodeId) => { if (sourceFile) void this.plugin.openFileInBloomMD(sourceFile, nodeId); },
         openWikiLink: (target) => { if (sourceFile) void this.app.workspace.openLinkText(target, sourceFile.path, false); },
         openExternalLink: (url) => window.open(url, "_blank", "noopener,noreferrer"),
         switchFile: (path) => void this.plugin.loadFileIntoView(path, this),
@@ -513,12 +827,87 @@ class BloomMDView extends ItemView {
           const file = this.app.vault.getAbstractFileByPath(path);
           if (file instanceof TFile) void this.plugin.openMarkdownFile(file);
         },
+        readInk: async (path) => {
+          const file = this.app.vault.getAbstractFileByPath(path);
+          return file instanceof TFile ? this.app.vault.read(file) : null;
+        },
+        saveInk: (nodeId, path, svg, expectedSvg, conflictOf) => (sourceFile ? this.saveInk(sourceFile, nodeId, path, svg, expectedSvg, conflictOf) : Promise.resolve(null)),
+        resolveEmbed: (link) => this.app.metadataCache.getFirstLinkpathDest(link, sourceFile?.path ?? "")?.path ?? null,
+        resourceUrl: (path) => {
+          const file = this.app.vault.getAbstractFileByPath(path);
+          return file instanceof TFile ? this.app.vault.getResourcePath(file) : "";
+        },
+        pickNote: () => pickNote(this.app, sourceFile?.path ?? ""),
+        // Bound to this note: a drawing still saving after the view switched notes stays with its own note.
+        saveMapInk: (path, svg, expectedSvg, conflictOf) => sourceFile ? this.saveMapInk(sourceFile, path, svg, expectedSvg, conflictOf) : Promise.resolve(null),
+        saveExport: async (extension, data) => {
+          if (!sourceFile) return null;
+          try {
+            const target = await this.app.fileManager.getAvailablePathForAttachment(`${sourceFile.basename} map.${extension}`, sourceFile.path);
+            const folder = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
+            if (folder && !this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+            const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+            const file = await this.app.vault.createBinary(target, buffer);
+            new Notice(`BloomMD: Map exported to ${file.path}`);
+            return file.path;
+          } catch (error) {
+            this.showError(error);
+            return null;
+          }
+        },
+        openMenu: (position, items, onHide) => {
+          const menu = new Menu();
+          if (onHide) menu.onHide(onHide);
+          for (const item of items) {
+            menu.addItem((entry) => {
+              entry.setTitle(item.title).setIcon(item.icon).onClick(item.onClick);
+              if (item.danger) entry.setWarning(true);
+            });
+          }
+          menu.showAtPosition(position);
+        },
+        askAgent: (id, title) => { if (sourceFile) this.plugin.agent.ask(sourceFile.path, id, title); },
+        createNodeFromInk: (parentId, svg, title) => editable ? this.createNodeFromInk(parentId, svg, title) : Promise.resolve(null),
+        renderMarkdown: (element, markdown) => {
+          // One component per render so embeds and post-processors are unloaded with the slide.
+          const component = new Component();
+          component.load();
+          element.empty();
+          MarkdownRenderer.render(this.app, markdown, element, sourceFile?.path ?? "", component)
+            .catch((error: unknown) => console.error("BloomMD could not render node content", error));
+          return () => component.unload();
+        },
+        linkNote: (id, note, expectedMetadata) => editable
+          ? this.applyMutation((markdown) => {
+              const node = this.currentNode(markdown, id);
+              if (!metadataEquals(node.metadata, expectedMetadata)) throw new Error("This node metadata changed in Obsidian. Reload before linking a note.");
+              const linked = updateHeadingMetadata(markdown, id, withLinkedNote(node.metadata, note));
+              if (!note) return linked;
+              // The wikilink lets Obsidian's graph, backlinks and renames see the connection too.
+              return updateHeadingContent(linked, id, ensureWikiLink(this.currentNode(linked, id).content, note));
+            })
+          : Promise.resolve(false),
+        hoverLink: (event, target, targetEl) => {
+          this.app.workspace.trigger("hover-link", {
+            event,
+            source: VIEW_TYPE_BLOOMMD,
+            hoverParent: this,
+            targetEl,
+            linktext: target,
+            sourcePath: sourceFile?.path ?? "",
+          });
+        },
       },
     });
   }
 
   refreshSettings() {
     this.renderCanvas();
+    if (this.plugin.settings.learning.enabled !== Boolean(this.learning)) void this.reloadLearning();
+  }
+
+  toggleFocusMode() {
+    this.mount?.host.dispatchEvent(new CustomEvent(FOCUS_MODE_EVENT));
   }
 }
 
@@ -528,14 +917,62 @@ export default class BloomMDPlugin extends Plugin {
   private sharedDocumentBindings: ObsidianSharedDocumentEntry[] = [];
   private sharedDocumentSessions = new Map<string, ObsidianSharedDocumentSession>();
   private saveTimer: number | null = null;
+  private pendingNoteRenames = new Map<string, string>();
+  private noteRetargetTimer: number | null = null;
+  learningStore!: LearningStore;
+  agent!: AgentHub;
 
   async onload() {
     await this.loadSettings();
+    this.agent = new AgentHub(this, {
+      get: () => this.settings.agentReviewer,
+      set: async (name) => {
+        this.settings.agentReviewer = name;
+        await this.persistData();
+      },
+    });
+    // The adapter reaches the hidden .bloommd folder, which the vault API does not index, on every platform.
+    this.learningStore = new LearningStore(this.app.vault.adapter);
+    // Progress files change when another device syncs; the raw event also sees hidden folders.
+    const vaultEvents = this.app.vault as unknown as { on(name: "raw", callback: (path: string) => void): EventRef };
+    this.registerEvent(vaultEvents.on("raw", (path) => {
+      if (!path.startsWith(`${LEARNING_FOLDER}/`)) return;
+      this.bloomViews().forEach((view) => { if (view.usesLearningFile(path)) void view.reloadLearning(); });
+    }));
+    // Obsidian mobile may not report changes in hidden folders: re-read when the app comes back.
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (document.visibilityState === "visible") this.bloomViews().forEach((view) => void view.reloadLearning());
+    });
     this.registerView(VIEW_TYPE_BLOOMMD, (leaf) => new BloomMDView(leaf, this));
+    // Page Preview shows notes linked from handwriting on hover (mouse or Apple Pencil) without a modifier key.
+    this.registerHoverLinkSource(VIEW_TYPE_BLOOMMD, { display: "BloomMD", defaultMod: false });
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (file instanceof TFile && file.extension === "md") {
+        void this.retargetInkLinks(file, oldPath);
+        this.queueNodeNoteRetarget(file, oldPath);
+        // Progress of a map without a BloomMD id is keyed by its path and moves with the note.
+        void this.learningStore.move(this.learningKey(file, oldPath), this.learningKey(file), file.path)
+          .then((moved) => { if (moved) this.bloomViews().forEach((view) => void view.reloadLearning()); })
+          .catch((error: unknown) => console.error("BloomMD could not move learning progress after a rename", error));
+      }
+    }));
+    this.register(() => {
+      if (this.noteRetargetTimer !== null) window.clearTimeout(this.noteRetargetTimer);
+    });
 
     this.addRibbonIcon("git-branch", "Visualize current note", () => void this.visualizeCurrentNote());
     this.addCommand({ id: "visualize-current-note", name: "Visualize current note", callback: () => void this.visualizeCurrentNote() });
     this.addCommand({ id: "open-current-note", name: "Open current note", callback: () => void this.openCurrentNoteInBloomMD() });
+    this.addCommand({
+      id: "toggle-focus-mode",
+      name: "Toggle focus mode",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(BloomMDView) ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD)[0]?.view;
+        if (!(view instanceof BloomMDView)) return false;
+        if (!checking) view.toggleFocusMode();
+        return true;
+      },
+    });
     this.addCommand({ id: "visualize-current-folder", name: "Visualize current folder", callback: () => void this.visualizeCurrentFolder() });
     this.addCommand({ id: "share-current-note", name: "Share current note with workspace", callback: () => void this.shareCurrentNote() });
     this.addCommand({ id: "unshare-current-note", name: "Stop sharing current note with workspace", callback: () => void this.unshareCurrentNote() });
@@ -562,6 +999,89 @@ export default class BloomMDPlugin extends Plugin {
     this.addSettingTab(new BloomMDSettingTab(this.app, this));
   }
 
+  /**
+   * A folder rename fires one event per note; collecting them lets a single pass over the vault
+   * update every node that linked one of the moved notes.
+   */
+  private queueNodeNoteRetarget(note: TFile, oldPath: string) {
+    for (const [previous, path] of this.pendingNoteRenames) {
+      if (path === oldPath) this.pendingNoteRenames.set(previous, note.path);
+    }
+    this.pendingNoteRenames.set(oldPath, note.path);
+    if (this.noteRetargetTimer !== null) window.clearTimeout(this.noteRetargetTimer);
+    this.noteRetargetTimer = window.setTimeout(() => {
+      this.noteRetargetTimer = null;
+      void this.retargetNodeNotes();
+    }, NOTE_RETARGET_DELAY_MS);
+  }
+
+  /** Nodes linked to a renamed note keep pointing at it; Obsidian only rewrites visible `[[links]]`. */
+  private async retargetNodeNotes() {
+    const renames = [...this.pendingNoteRenames].flatMap(([oldPath, path]) => {
+      const note = this.app.vault.getAbstractFileByPath(path);
+      return note instanceof TFile ? [{ oldPath, note, name: oldPath.split("/").pop()!.replace(/\.md$/i, "") }] : [];
+    });
+    this.pendingNoteRenames.clear();
+    if (renames.length === 0) return;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      // Node metadata lives on headings, so notes without headings cannot link anything.
+      if (!this.app.metadataCache.getFileCache(file)?.headings?.length) continue;
+      try {
+        const current = await this.app.vault.cachedRead(file);
+        if (!current.includes("bloommd:meta") || !renames.some(({ name }) => current.includes(name))) continue;
+        const retarget = (markdown: string) => renames.reduce((next, { oldPath, note }) => retargetLinkedNotes(
+          next,
+          oldPath,
+          this.app.metadataCache.fileToLinktext(note, file.path, true),
+          // Resolved from this note: a link that now finds another note of that name never meant the renamed one.
+          (link) => {
+            const destination = this.app.metadataCache.getFirstLinkpathDest(link.split("#")[0]!.trim(), file.path);
+            return destination === null || destination === note;
+          },
+        ), markdown);
+        const next = retarget(current);
+        if (next === current) continue;
+        await this.app.vault.process(file, (latest) => (latest === current ? next : retarget(latest)));
+      } catch (error) {
+        console.error(`BloomMD could not update linked notes in ${file.path}`, error);
+      }
+    }
+  }
+
+  /** Note-link targets per drawing, keyed by path and valid while the file's mtime is unchanged. */
+  private readonly inkLinkTargets = new Map<string, { mtime: number; targets: string[] }>();
+
+  /**
+   * Obsidian rewrites `[[links]]` in Markdown on rename; drawings keep their own link list in step.
+   * Only SVGs embedded in some note can hold handwriting links, and cached link lists spare reading
+   * drawings that cannot point at the renamed note.
+   */
+  private async retargetInkLinks(note: TFile, oldPath: string) {
+    const embedded = new Set<string>();
+    for (const targets of Object.values(this.app.metadataCache.resolvedLinks)) {
+      for (const target of Object.keys(targets)) if (target.toLowerCase().endsWith(".svg")) embedded.add(target);
+    }
+    for (const path of embedded) {
+      const drawing = this.app.vault.getAbstractFileByPath(path);
+      if (!(drawing instanceof TFile)) continue;
+      const cached = this.inkLinkTargets.get(path);
+      if (cached && cached.mtime === drawing.stat.mtime && !cached.targets.some((target) => linkTargetsPath(target, oldPath))) continue;
+      try {
+        const current = await this.app.vault.cachedRead(drawing);
+        const parsed = parseInkSvg(current);
+        this.inkLinkTargets.set(path, { mtime: drawing.stat.mtime, targets: parsed?.document.links.map((link) => link.target) ?? [] });
+        if (!parsed || parsed.readOnly) continue;
+        // A link that still resolves after the rename points at another note with the same name.
+        const resolve = (target: string) => this.app.metadataCache.getFirstLinkpathDest(target, drawing.path)?.path ?? null;
+        const next = retargetInkLinks(parsed.document, oldPath, this.app.metadataCache.fileToLinktext(note, drawing.path, true), resolve);
+        if (next === parsed.document) continue;
+        await this.app.vault.process(drawing, (latest) => (latest === current ? serializeInkSvg(next) : latest));
+      } catch (error) {
+        console.error(`BloomMD could not update note links in ${drawing.path}`, error);
+      }
+    }
+  }
+
   onunload() {
     this.sharedDocumentSessions.forEach((session) => session.disconnect());
     this.sharedDocumentSessions.clear();
@@ -572,6 +1092,45 @@ export default class BloomMDPlugin extends Plugin {
     void this.persistData().catch((error: unknown) => {
       console.error("BloomMD: failed to persist plugin data during unload", error);
     });
+  }
+
+  private bloomViews(): BloomMDView[] {
+    return this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD).flatMap((leaf) => (leaf.view instanceof BloomMDView ? [leaf.view] : []));
+  }
+
+  learningKey(file: TFile, path = file.path): string {
+    return learningKey({ id: this.app.metadataCache.getFileCache(file)?.frontmatter?.id, path });
+  }
+
+  async loadLearning(file: TFile): Promise<LearningFile> {
+    const key = this.learningKey(file);
+    // A note that got a BloomMD id (e.g. in the BloomMD app) keeps the progress stored under its path.
+    if (key.startsWith("id-")) await this.learningStore.move(learningKey({ path: file.path }), key, file.path);
+    return this.learningStore.load(key);
+  }
+
+  /** The map whose progress the settings act on: the one in the BloomMD view. */
+  learningMapView(): BloomMDView | null {
+    return this.bloomViews().find((view) => view.mapFile()) ?? null;
+  }
+
+  async resetLearning(): Promise<void> {
+    const view = this.learningMapView();
+    const file = view?.mapFile();
+    if (!view || !file) {
+      new Notice("BloomMD: Open a map first.");
+      return;
+    }
+    const confirmed = await confirmAction(
+      this.app,
+      "Reset learning progress?",
+      `All ratings and the exam date of "${file.basename}" are reset on all your devices. The note is not changed.`,
+      "Reset progress",
+    );
+    if (!confirmed) return;
+    const resetAt = new Date().toISOString();
+    await view.updateLearning((current) => ({ format: current.format, entries: {}, resetAt, examUpdated: resetAt }));
+    new Notice(`BloomMD: Learning progress of ${file.basename} was reset.`);
   }
 
   async visualizeCurrentNote() {
@@ -608,6 +1167,10 @@ export default class BloomMDPlugin extends Plugin {
   }
 
   async shareCurrentNote() {
+    if (Platform.isMobile) {
+      new Notice(SHARED_MODE_UNAVAILABLE);
+      return;
+    }
     const file = this.getActiveMarkdownFile();
     if (!file) {
       new Notice("BloomMD: Open a Markdown note first.");
@@ -675,7 +1238,7 @@ export default class BloomMDPlugin extends Plugin {
     await this.persistData();
     this.refreshOpenBloomMDViews();
     const token = this.app.secretStorage.getSecret(COLLABORATION_TOKEN_SECRET_ID);
-    if (token) {
+    if (token && !Platform.isMobile) {
       try {
         const { WorkspaceSyncClient } = await loadSharedDocumentRuntime();
         const client = new WorkspaceSyncClient({ baseUrl: this.settings.collaborationServerUrl, accessToken: token });
@@ -701,28 +1264,60 @@ export default class BloomMDPlugin extends Plugin {
     await this.openFileInBloomMD(this.getActiveMarkdownFile());
   }
 
-  async openFileInBloomMD(file: TFile | null) {
+  async openFileInBloomMD(file: TFile | null, nodeId?: string | null) {
     if (!file) {
       new Notice("BloomMD: Open a Markdown note first.");
       return;
     }
-    if (this.settings.openTarget === "desktop" && Platform.isDesktop && Platform.isMacOS) {
+    if (this.settings.openTarget === "desktop" && Platform.isDesktop) {
       const adapter = this.app.vault.adapter;
       if (!(adapter instanceof FileSystemAdapter)) {
         new Notice("BloomMD: This Vault does not expose a local file path. Opening the web app instead.");
         window.open(BLOOMMD_WEB_DEMO);
         return;
       }
-      const absolutePath = adapter.getFullPath(file.path);
-      window.open(`bloommd://open?path=${encodeURIComponent(absolutePath)}`);
-      new Notice("BloomMD: Opening the local note in the desktop app. No note content was uploaded.");
+      await this.openInDesktop(adapter.getFullPath(file.path), nodeId);
       return;
     }
-    if (this.settings.openTarget === "desktop" && !(Platform.isDesktop && Platform.isMacOS)) {
-      new Notice("BloomMD Desktop file handoff is currently available on macOS. Opening the private web fallback.");
+    if (Platform.isMobile && this.settings.mobileAppInstalled) {
+      // The app opened this vault as its folder, so the vault-relative path names the same note.
+      window.open(mobileOpenUrl(file.path, nodeId));
+      return;
+    }
+    if (this.settings.openTarget === "desktop" && Platform.isMobile) {
+      new Notice("BloomMD for iPad and iPhone is not available yet. Opening the private web fallback.");
     }
     window.open(BLOOMMD_WEB_DEMO);
     new Notice("BloomMD web opened. Choose the local file manually; note content was not sent.");
+  }
+
+  /**
+   * Hands the note to BloomMD Desktop: straight to a running app, otherwise by starting it. Only the
+   * file path and node id leave Obsidian; no note content is uploaded anywhere.
+   */
+  private async openInDesktop(absolutePath: string, nodeId?: string | null) {
+    let starting: Notice | null = null;
+    const result = await openNoteInDesktop(desktopDeps(), absolutePath, desktopNodeId(nodeId), desktopOpenUrl(absolutePath, nodeId), () => {
+      starting = new Notice("BloomMD: Starting BloomMD Desktop with this note…", 0);
+    });
+    (starting as Notice | null)?.hide();
+    if (result === "opened" || result === "launched") new Notice("BloomMD: Opened in BloomMD Desktop.");
+    else if (result === "unconfirmed") new Notice("BloomMD: BloomMD Desktop did not confirm the note. If it does not show it, choose Open app again once BloomMD is open.", 10_000);
+    else this.showDesktopMissing(result);
+  }
+
+  private showDesktopMissing(reason: "not-installed" | "not-found" | "start-first") {
+    const notice = new Notice("", 10_000);
+    notice.messageEl.empty();
+    if (reason === "start-first") {
+      notice.messageEl.createSpan({ text: "Please start BloomMD Desktop first, then choose Open app again. Not installed yet? Get it from " });
+    } else if (reason === "not-found") {
+      notice.messageEl.createSpan({ text: "BloomMD Desktop was not found. Start it first, then choose Open app again, or get it from " });
+    } else {
+      notice.messageEl.createSpan({ text: "BloomMD Desktop is not installed. Get it from " });
+    }
+    notice.messageEl.createEl("a", { text: "bloommd.io/download", href: BLOOMMD_DOWNLOAD_URL });
+    notice.messageEl.createSpan({ text: ", or choose the web app in the BloomMD settings." });
   }
 
   markdownFiles(folder: TFolder | null): Array<{ path: string; title: string }> {
@@ -739,7 +1334,9 @@ export default class BloomMDPlugin extends Plugin {
   }
 
   getSharedDocumentStatus(localPath: string): ObsidianSharedDocumentEntry["binding"]["connectionState"] | null {
-    return this.sharedDocumentBindings.find((entry) => entry.localPath === localPath)?.binding.connectionState ?? null;
+    const state = this.sharedDocumentBindings.find((entry) => entry.localPath === localPath)?.binding.connectionState ?? null;
+    // Mobile never connects shared notes, so a synced "connected" state would be misleading there.
+    return state && Platform.isMobile && state !== "revoked" ? "offline" : state;
   }
 
   getLayout(key: string): PersistedCanvasLayout {
@@ -779,7 +1376,7 @@ export default class BloomMDPlugin extends Plugin {
     const storedSettings = stored?.settings ?? stored ?? {};
     const migratedTarget = storedSettings.openTarget
       ?? (storedSettings.preferDesktop === false && storedSettings.preferWeb ? "web" : DEFAULT_SETTINGS.openTarget);
-    this.settings = { ...DEFAULT_SETTINGS, ...storedSettings, openTarget: migratedTarget };
+    this.settings = { ...DEFAULT_SETTINGS, ...storedSettings, openTarget: migratedTarget, learning: normalizeLearningSettings(storedSettings.learning) };
     this.layouts = stored?.layouts ?? {};
     this.sharedDocumentBindings = Array.isArray(stored?.sharedDocumentBindings)
       ? stored.sharedDocumentBindings.filter(isSharedDocumentEntry)
@@ -858,7 +1455,8 @@ export default class BloomMDPlugin extends Plugin {
   }
 
   private async connectSharedDocument(file: TFile): Promise<void> {
-    if (this.sharedDocumentSessions.has(file.path)) return;
+    // Bindings sync to mobile with the vault; they stay untouched and reconnect on desktop.
+    if (Platform.isMobile || this.sharedDocumentSessions.has(file.path)) return;
     const entry = this.sharedDocumentBindings.find((candidate) => candidate.localPath === file.path);
     if (!entry || entry.binding.connectionState === "revoked") return;
     const token = this.app.secretStorage.getSecret(COLLABORATION_TOKEN_SECRET_ID);
@@ -895,13 +1493,18 @@ class BloomMDSettingTab extends PluginSettingTab {
       items: [
         {
           name: "Open in BloomMD",
-          desc: "Desktop opens the local file on macOS. Web opens the private local-file demo without uploading note content.",
+          desc: "Desktop opens the local file at the selected node in BloomMD Desktop. macOS and Linux (package install) start the app when needed; on Windows, start BloomMD Desktop first. Web opens the private local-file demo without uploading note content.",
           control: {
             type: "dropdown",
             key: "openTarget",
             defaultValue: "desktop",
             options: { desktop: "Desktop app", web: "Web app" },
           },
+        },
+        {
+          name: "BloomMD app on this iPad",
+          desc: "Turn on when the BloomMD app is installed on this iPad or iPhone and has this vault opened as its folder. Open app then opens the note there, at the selected node.",
+          control: { type: "toggle", key: "mobileAppInstalled", defaultValue: false },
         },
         {
           name: "Show content previews",
@@ -924,26 +1527,138 @@ class BloomMDSettingTab extends PluginSettingTab {
           action: () => new CollaborationTokenModal(this.app, this.plugin).open(),
         },
       ],
-    }];
+    }, this.learningGroup()];
+  }
+
+  private learningGroup(): SettingDefinitionItem {
+    const learning = () => this.plugin.settings.learning;
+    const on = () => learning().enabled;
+    const spaced = () => on() && learning().spacedRepetition;
+    const level = (index: number): SettingDefinitionRender => ({
+      name: `Level ${index + 1}`,
+      desc: index === 0 ? "Name, color and – with spaced repetition – days until the node is due again." : "",
+      visible: () => on() && index < learning().levels,
+      render: (setting) => {
+        const current = learning();
+        const levels = current.levels;
+        const defaults = normalizeLearningSettings(undefined);
+        setting.addText((text) => text
+          .setPlaceholder(defaults.names[levels][index]!)
+          .setValue(current.names[levels][index]!)
+          .onChange((value) => {
+            current.names[levels][index] = value.trim() || defaults.names[levels][index]!;
+            void this.plugin.saveSettings();
+          }));
+        setting.addColorPicker((picker) => picker
+          .setValue(current.colors[levels][index]!)
+          .onChange((value) => {
+            current.colors[levels][index] = value;
+            void this.plugin.saveSettings();
+          }));
+        if (current.spacedRepetition) {
+          setting.addText((text) => {
+            text.inputEl.type = "number";
+            text.inputEl.min = "0";
+            text.inputEl.max = "180";
+            text.inputEl.setAttribute("aria-label", `Days until due for level ${index + 1}`);
+            text.setValue(String(current.intervals[levels][index])).onChange((value) => {
+              const days = Number(value);
+              if (!Number.isFinite(days) || days < 0 || days > 180) return;
+              current.intervals[levels][index] = Math.round(days);
+              void this.plugin.saveSettings();
+            });
+          });
+        }
+      },
+    });
+    return {
+      type: "group",
+      heading: "Learning",
+      items: [
+        {
+          name: "Learning progress",
+          desc: "Rate nodes after revealing them in study mode and see your progress on the map. Progress is stored per map in .bloommd/learning/ in the vault and never changes the note.",
+          control: { type: "toggle", key: "learning.enabled", defaultValue: true },
+        },
+        {
+          name: "Levels",
+          visible: on,
+          control: { type: "dropdown", key: "learning.levels", defaultValue: "3", options: { 3: "3 levels", 5: "5 levels" } },
+        },
+        ...[0, 1, 2, 3, 4].map(level),
+        {
+          name: "Show on the map",
+          desc: "How nodes show their level.",
+          visible: on,
+          control: { type: "dropdown", key: "learning.display", defaultValue: "border", options: { border: "Colored border", fill: "Fill tint", badge: "Badge", off: "Off" } },
+        },
+        {
+          name: "Branch progress",
+          desc: "Show mastered/total nodes on every node with children.",
+          visible: on,
+          control: { type: "toggle", key: "learning.branchProgress", defaultValue: false },
+        },
+        {
+          name: "Spaced repetition",
+          desc: "Rated nodes become due again after their level's interval. Each further top rating in a row multiplies the top interval by the growth factor (up to 180 days).",
+          visible: on,
+          control: { type: "toggle", key: "learning.spacedRepetition", defaultValue: true },
+        },
+        {
+          name: "Growth factor",
+          visible: spaced,
+          control: { type: "number", key: "learning.growth", defaultValue: 2.5, min: 1, max: 10, step: 0.1 },
+        },
+        {
+          name: "Default study order",
+          visible: on,
+          control: { type: "dropdown", key: "learning.order", defaultValue: "due", options: STUDY_ORDERS },
+        },
+        {
+          name: "Reset progress for the current map",
+          desc: "Deletes all ratings and the exam date of the map open in BloomMD, on all devices. The note stays unchanged.",
+          visible: on,
+          disabled: () => !this.plugin.learningMapView(),
+          action: () => void this.plugin.resetLearning(),
+        },
+      ],
+    };
   }
 
   getControlValue(key: string): unknown {
     if (key === "openTarget") return this.plugin.settings.openTarget;
     if (key === "showNodeContent") return this.plugin.settings.showNodeContent;
+    if (key === "mobileAppInstalled") return this.plugin.settings.mobileAppInstalled;
     if (key === "collaborationServerUrl") return this.plugin.settings.collaborationServerUrl;
     if (key === "collaborationWorkspaceId") return this.plugin.settings.collaborationWorkspaceId;
+    if (key.startsWith("learning.")) {
+      const value = this.plugin.settings.learning[key.slice(9) as keyof LearningSettings];
+      return key === "learning.levels" ? String(value) : value;
+    }
     return undefined;
   }
 
   setControlValue(key: string, value: unknown): Promise<void> {
     if (key === "openTarget" && (value === "desktop" || value === "web")) {
       this.plugin.settings.openTarget = value;
+    } else if (key === "mobileAppInstalled" && typeof value === "boolean") {
+      this.plugin.settings.mobileAppInstalled = value;
     } else if (key === "showNodeContent" && typeof value === "boolean") {
       this.plugin.settings.showNodeContent = value;
     } else if (key === "collaborationServerUrl" && typeof value === "string") {
       this.plugin.settings.collaborationServerUrl = value.trim();
     } else if (key === "collaborationWorkspaceId" && typeof value === "string") {
       this.plugin.settings.collaborationWorkspaceId = value.trim();
+    } else if (key.startsWith("learning.")) {
+      const learning = this.plugin.settings.learning;
+      const next = normalizeLearningSettings({ ...learning, [key.slice(9)]: key === "learning.levels" ? Number(value) : value });
+      // Settings that show or hide other rows redraw the tab.
+      const redraw = next.enabled !== learning.enabled || next.levels !== learning.levels || next.spacedRepetition !== learning.spacedRepetition;
+      this.plugin.settings.learning = next;
+      if (redraw) {
+        this.update();
+        this.display();
+      }
     }
     return this.plugin.saveSettings();
   }

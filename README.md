@@ -14,7 +14,7 @@ The wider BloomMD product is evolving as a local-first Markdown workspace: brows
 ## Current Status
 
 - **Plugin:** public desktop beta for Obsidian.
-- **Supported Obsidian runtime:** desktop only for now; mobile is not enabled until touch behavior has been tested on real iOS and Android devices.
+- **Supported Obsidian runtime:** desktop and mobile (beta). Mobile releases require a passed touch matrix for the exact version, see [MOBILE-MATRIX.md](MOBILE-MATRIX.md); shared mode stays desktop-only for now.
 - **Source of truth:** your Markdown files remain the source. BloomMD adds a visual layer; it does not create a proprietary workspace format.
 - **Product beta:** the BloomMD web/cloud and native desktop app are distributed separately through the closed beta at <https://bloommd.io>.
 
@@ -66,6 +66,32 @@ the same people who use a BloomMD workspace; it does not turn the complete vault
 While offline, edits remain local and are offered to the shared mirror after the connection returns.
 If access is revoked, the plugin stops writing remote updates and requires a new explicit share.
 
+## Agent Panel
+
+If an AI agent such as OpenClaw files notes into this vault through `bloommd-wiki agent mcp`, the
+**BloomMD agent** panel (robot icon in the ribbon, or **Open agent panel**) is where you stay in
+charge. Everything lives in the vault's `.bloommd/` folder, works on desktop and iPad, and follows
+the same rules as the `bloommd-wiki agent` commands.
+
+- **Proposals:** what the agent wants to change, with agent, time, note, reason and source, plus an
+  outline of added (+), changed (~) and removed (-) headings and the full text. **Approve** writes
+  it through Obsidian; if the note changed since the proposal, the panel shows the difference and you
+  choose **Apply anyway** or **Reject**. Rejecting takes an optional reason for the agent. The ribbon
+  icon counts open proposals and a notice appears when a new one arrives.
+- **Requests:** **Ask agent…** in a node's menu on the map (or **Ask agent about current note**)
+  leaves a question or instruction in `.bloommd/requests/`. The agent picks it up with
+  `bloommd_requests`, answers with `bloommd_answer_request`, and its answer appears here; changes it
+  makes for the request follow its rights (direct or as proposal).
+- **History:** the change log with who, what and when. **Undo** restores a note as it was before an
+  agent change or an approved proposal (after a confirmation, and only if nobody edited it since).
+- **Map marker:** nodes the agent changed since you last opened a map on this device carry a small
+  purple dot.
+- **Rights:** the default and one rule per top-level folder: *read*, *propose* (changes wait for
+  you) or *write* (direct, with log and undo). Without a rule file the agent may only propose.
+
+Only a person can approve: the agent has no tool for it. Nothing is sent anywhere by the plugin; the
+agent reads and writes the vault folder itself.
+
 ## Install
 
 ### Beta via BRAT
@@ -87,9 +113,11 @@ BRAT keeps the plugin updated as beta releases are tagged.
 
 - `BloomMD: Visualize current note` - also available from the ribbon.
 - `BloomMD: Visualize current folder`.
-- `BloomMD: Open current note in BloomMD`.
+- `BloomMD: Open current note in BloomMD` - opens the note in BloomMD Desktop at the selected node (also the **Open app** toolbar button). A running app takes the note on every platform; macOS and Linux (installed package) also start the app when needed, on Windows start BloomMD Desktop first.
 - `BloomMD: Share current note with BloomMD workspace`.
 - `BloomMD: Stop sharing current note with BloomMD workspace`.
+- `BloomMD: Open agent panel` - also available from the ribbon.
+- `BloomMD: Ask agent about current note`.
 
 ## Editing
 
@@ -104,6 +132,35 @@ BRAT keeps the plugin updated as beta releases are tagged.
 | Copy / paste a branch | `Cmd/Ctrl+C`, select destination, then `Cmd/Ctrl+V` |
 | Undo / redo | `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` |
 | Edit content | Open the inspector; edits autosave and detect external changes |
+| Pen on the map (draw mode) | Tap selects, double tap opens, hold opens the menu, hold and drag moves; a line from a node into free space adds a child, node to node connects, a zigzag scratches ink out |
+
+## Learning Progress
+
+Study mode (hat icon) covers node contents until you reveal them. With **Learning progress** on
+(Settings → BloomMD → Learning, on by default), every revealed node offers rating buttons — by
+default **New**, **Unsure** and **Got it**, or five levels with your own names. Tap them with Apple
+Pencil or a finger, click them, or press `Space` to reveal the selected node and `1`–`5` to rate it
+(the keyboard then moves on to the next node of the session).
+
+- **On the map:** nodes show their level as a colored border, a fill tint or a badge (or nothing);
+  colors are configurable per level. Due nodes get a **Due** marker; optional branch progress shows
+  mastered/total on every node with children.
+- **Study bar:** `12/30 mastered · 5 due`, the study order (**Due first**, **Map order**, **Only due**,
+  **Only unsure**), **Next**, and an optional exam date with days left and how many not-yet-mastered
+  nodes to cover per day.
+- **Spaced repetition** (optional, on by default): every level has an interval in days (defaults
+  New 0, Unsure 1, Got it 4). A rated node is due again on the rating day plus its interval. Each
+  further top rating in a row multiplies the top interval by the growth factor (default 2.5:
+  4 → 10 → 25 → 63 days, at most 180); any lower rating resets that streak.
+- **Storage:** progress is personal and never changes the note. It is stored in the vault at
+  `.bloommd/learning/<key>.json`, so it syncs with the vault (for example iCloud) between Mac and
+  iPad. The key is the note's frontmatter `id` when it has one, otherwise a hash of its path; a
+  path-keyed file moves along when the note is renamed in Obsidian. Inside, ratings are keyed by
+  the nodes' `bloommd:id`, so renaming or moving a node keeps its progress. Every save merges node by
+  node with the file on disk (the newer rating wins), so sessions on two devices do not overwrite
+  each other. **Obsidian Sync** does not sync hidden folders; progress then stays per device.
+- **Reset progress for the current map** in the settings clears its ratings and exam date on all
+  devices after a confirmation.
 
 ## Feedback And Issues
 
@@ -142,4 +199,7 @@ This checkout is a public release mirror. Development changes belong in the [Blo
 
 ## License
 
-MIT
+BloomMD for Obsidian is licensed under the [MIT License](LICENSE), including the
+shared BloomMD Core snapshots (`src/markdown-document.ts`, `src/core-types.ts`) that the
+public mirror carries for each release. The rest of BloomMD (apps, sync server and the
+monorepo) is licensed under the Elastic License 2.0; see https://bloommd.io/lizenz.
