@@ -60,4 +60,7 @@ On 2026-10-24, plugin 0.7.0 passed all 58 automated steps again (including the a
 "BloomMD iPad Test" for the manual matrix on a real iPad with Apple Pencil. On 2026-10-24 the owner (Max Möllenbeck)
 confirmed the manual matrix on a real iPad for 0.7.0.
 
-Verified plugin version: 0.7.0
+On 2026-10-25, plugin 0.7.1 (0.7.0 plus code quality fixes from the Obsidian review, no change in
+behaviour) passed all 58 automated steps again; the manual iPad matrix confirmed for 0.7.0 applies.
+
+Verified plugin version: 0.7.1

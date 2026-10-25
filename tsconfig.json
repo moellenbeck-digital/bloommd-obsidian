@@ -7,11 +7,22 @@
     "jsx": "react-jsx",
     "strict": true,
     "target": "ES2018",
-    "lib": ["DOM", "ES2018"],
-    "types": ["node"],
+    "lib": [
+      "DOM",
+      "ES2018"
+    ],
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "noUncheckedIndexedAccess": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
 }

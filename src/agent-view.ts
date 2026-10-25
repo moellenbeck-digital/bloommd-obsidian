@@ -354,7 +354,7 @@ class AgentView extends ItemView {
     const undoable = new Set(history.map((entry) => entry.changeId));
     if (!changes.length) body.createEl("p", { text: "The agent has not changed anything yet.", cls: "bloommd-agent-empty" });
     for (const change of changes) {
-      const text = (key: string) => (typeof change[key] === "string" ? (change[key] as string) : "");
+      const text = (key: string) => (typeof change[key] === "string" ? change[key] : "");
       const event = text("event");
       const who = text("reviewer") ? `${event} by ${text("reviewer")}` : `${event} · ${text("agent")}`;
       const card = this.card(body, who, when(text("at")), text("path"));

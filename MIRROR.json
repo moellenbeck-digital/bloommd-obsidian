@@ -3,11 +3,11 @@
   "mode": "release-mirror",
   "canonicalRepository": "moellenbeck-digital/BloomMD",
   "canonicalPath": "plugins/obsidian",
-  "sourceCommit": "100fb9492d4952ea1ca702ed03faa36e1f855994",
+  "sourceCommit": "9530af91922f3298f619805155989419d48d7771",
   "sourceDirty": false,
-  "sourceManifestSha256": "9e3481f37526e5be59a42470558552ee11804794d409cd2a6e9e58541af197a7",
-  "releaseSnapshotSha256": "ef531ed486ed7a97edb7d56de8ce6dfc7e9b43d60a1eef238e6c8ea619b28ea2",
-  "pluginVersion": "0.7.0",
+  "sourceManifestSha256": "94e672619a2b9372f7dd708aa76026ba87dcb8732cadfd5b637d36188514afc9",
+  "releaseSnapshotSha256": "d1e535cc6e3faf6bccba9f8ac323f5d433719b98660f85b39078e67ff02ccfe2",
+  "pluginVersion": "0.7.1",
   "core": {
     "sourcePath": "packages/core/src/obsidian-markdown.ts",
     "sourceSha256": "79d5701c3ca17735f2da0ba8318af49d5b11b87d2558432df05af9e53c0ae8a2",
@@ -22,15 +22,15 @@
   },
   "learning": {
     "sourcePath": "packages/core/src/learning.ts",
-    "sourceSha256": "855be35f39e7bf1e6c902d5a74d78fa7b18dfbb25528b6f9d06d186bab155111",
+    "sourceSha256": "e470bbbe22fba679362689425f1676b457d7febb0380c72870ae6031ab09c979",
     "generatedPath": "src/learning.ts",
-    "generatedSha256": "dbd79da0687e82c9eceadfcd4ee9a6c23fe97ea5abe5312b97c89d52418ffe84"
+    "generatedSha256": "86fb71be18b7d8d20c190d3bce9ab62913dea3d8cff7f04679c14e2a3b4269d7"
   },
   "agentLedger": {
     "sourcePath": "packages/core/src/agent-ledger.ts",
-    "sourceSha256": "e08ac0a9ed258d08467bd18c269101e1b85e357ed7826d8425b6a458e2df8c67",
+    "sourceSha256": "4c0df04e56db1e93d0c2ff8e3c2c603748b820992dcf4c373a38708d077deaff",
     "generatedPath": "src/agent-ledger.ts",
-    "generatedSha256": "037369ae484d12fe04a095fec7aa3251a0e6a87c84dbfffe3d224510069cbbdd"
+    "generatedSha256": "7231576222c6641be72db75693b3b5d02df1b16380babf5af9cc571b3c0a81d1"
   },
   "ink": [
     {
@@ -41,9 +41,9 @@
     },
     {
       "sourcePath": "packages/ink/src/ink-document.ts",
-      "sourceSha256": "583177f80d033a15aa82869a161b1676f8219b08b202171a94f32983f00030db",
+      "sourceSha256": "7844a8a3f9b9ab1def2eacf7d917e8ff15f9ef182f2d139e12081b5fff3ea444",
       "generatedPath": "src/ink-document.ts",
-      "generatedSha256": "3062907b654c2c46866a2b73a05812aab3fb7de95dd60f8d76e750b54885c37a"
+      "generatedSha256": "de13436cd2aee99072b724bb24e62a4e41948decd4f252d3b494300d1300efe6"
     },
     {
       "sourcePath": "packages/ink/src/ink-state.ts",

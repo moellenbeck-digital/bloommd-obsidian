@@ -375,7 +375,7 @@ function sameCanvasEdgeSync(left: Edge[], right: Edge[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((edge, index) => {
     const next = right[index];
-    return Boolean(next) && edge.id === next.id && edge.source === next.source && edge.target === next.target && edge.type === next.type && edge.label === next.label;
+    return next !== undefined && edge.id === next.id && edge.source === next.source && edge.target === next.target && edge.type === next.type && edge.label === next.label;
   });
 }
 
@@ -1847,12 +1847,12 @@ function CanvasInner(props: CanvasProps) {
         pixelRatio: 1,
         // Fonts are the system's; skipping the web-font scan avoids fetching Obsidian's stylesheets.
         skipFonts: true,
-        filter: (node) => !(node instanceof Element && EXPORT_HIDDEN.some((selector) => node.matches(selector))),
+        filter: (node) => !(node.instanceOf(Element) && EXPORT_HIDDEN.some((selector) => node.matches(selector))),
         style: { width: `${width}px`, height: `${height}px`, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` },
       });
       // React Flow draws each edge in its own unsized SVG, which html-to-image loses; the edges are
       // painted directly from their path data underneath the nodes instead.
-      const canvas = document.createElement("canvas");
+      const canvas = createEl("canvas");
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d");
@@ -1870,7 +1870,7 @@ function CanvasInner(props: CanvasProps) {
         context.stroke(new Path2D(d));
       }
       context.setTransform(1, 0, 0, 1, 0, 0);
-      const nodes = document.createElement("img");
+      const nodes = createEl("img");
       nodes.src = nodesUrl;
       await nodes.decode();
       context.drawImage(nodes, 0, 0);
@@ -2823,7 +2823,7 @@ class CanvasErrorBoundary extends Component<CanvasErrorBoundaryProps, CanvasErro
 export function createCanvasMount(container: HTMLElement): CanvasMount {
   // React renders into a host element rather than Obsidian's view container, so focus mode can
   // lift the whole canvas above the workspace and put it back without remounting.
-  const host = document.createElement("div");
+  const host = createDiv();
   host.className = "bloommd-canvas-host";
   container.appendChild(host);
   const root: Root = createRoot(host);

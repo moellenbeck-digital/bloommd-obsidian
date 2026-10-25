@@ -129,7 +129,7 @@ export function MapInkBar({ children, compact, done }: { children: ReactNode; co
   }, [measure, placement]);
 
   useEffect(() => () => {
-    if (drag.current) cancelAnimationFrame(drag.current.frame);
+    if (drag.current) window.cancelAnimationFrame(drag.current.frame);
   }, []);
 
   // Obsidian mobile reads raw touches too: pulling down opens the command palette, sideways swipes
@@ -205,8 +205,8 @@ export function MapInkBar({ children, compact, done }: { children: ReactNode; co
       top: clamp(current.top + dy, BAR_MARGIN, sizes.container.height - sizes.bar.height - BAR_MARGIN),
     };
     // Follow the finger on the compositor: one transform per frame, no React render while dragging.
-    cancelAnimationFrame(current.frame);
-    current.frame = requestAnimationFrame(() => {
+    window.cancelAnimationFrame(current.frame);
+    current.frame = window.requestAnimationFrame(() => {
       bar.style.transform = `translate3d(${current.to.left - current.left}px, ${current.to.top - current.top}px, 0)`;
     });
   };
@@ -217,7 +217,7 @@ export function MapInkBar({ children, compact, done }: { children: ReactNode; co
     if (!current || !bar || current.pointerId !== event.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    cancelAnimationFrame(current.frame);
+    window.cancelAnimationFrame(current.frame);
     drag.current = null;
     bar.classList.remove("is-dragging");
     if (!current.moved) return;
@@ -231,9 +231,7 @@ export function MapInkBar({ children, compact, done }: { children: ReactNode; co
     const sizes = measure();
     const drop = current.to;
     // Swap the drag transform for the dropped position in the same frame, so nothing jumps.
-    bar.style.transform = "";
-    bar.style.left = `${drop.left}px`;
-    bar.style.top = `${drop.top}px`;
+    bar.setCssStyles({ transform: "", left: `${drop.left}px`, top: `${drop.top}px` });
     if (!sizes) return;
     const containerLeft = (bar.offsetParent as HTMLElement).getBoundingClientRect().left;
     // The last move is where the finger let go; a touch's pointerup does not always carry that point.
@@ -241,7 +239,7 @@ export function MapInkBar({ children, compact, done }: { children: ReactNode; co
     // Start the glide from where the bar was dropped, then let it slide into its settled place.
     setPosition(drop);
     setSettling(true);
-    requestAnimationFrame(() => update(next));
+    window.requestAnimationFrame(() => update(next));
   };
 
   const toggleCollapsed = () => update({ ...placement, collapsed: !placement.collapsed });

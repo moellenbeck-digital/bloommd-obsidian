@@ -8,7 +8,7 @@ type Cloneable = unknown;
 
 export function cloneFallback<T>(value: T, seen = new Map<object, unknown>()): T {
   if (value === null || typeof value !== "object") return value;
-  const existing = seen.get(value as object);
+  const existing = seen.get(value);
   if (existing !== undefined) return existing as T;
   if (value instanceof Date) return new Date(value.getTime()) as T;
   if (value instanceof Map) {
@@ -30,10 +30,10 @@ export function cloneFallback<T>(value: T, seen = new Map<object, unknown>()): T
     return copy as T;
   }
   const copy: Record<string, Cloneable> = {};
-  seen.set(value as object, copy);
-  for (const key of Object.keys(value as object)) copy[key] = cloneFallback((value as Record<string, Cloneable>)[key], seen);
+  seen.set(value, copy);
+  for (const key of Object.keys(value)) copy[key] = cloneFallback((value as Record<string, Cloneable>)[key], seen);
   return copy as T;
 }
 
-const scope = globalThis as { structuredClone?: <T>(value: T) => T };
+const scope = window as { structuredClone?: <T>(value: T) => T };
 if (typeof scope.structuredClone !== "function") scope.structuredClone = (value) => cloneFallback(value);

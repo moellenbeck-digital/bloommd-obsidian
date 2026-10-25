@@ -1,7 +1,7 @@
 /**
  * GENERATED FILE — DO NOT EDIT.
  * Snapshot of packages/ink/src/ink-document.ts by the BloomMD mirror sync.
- * Source SHA-256: 583177f80d033a15aa82869a161b1676f8219b08b202171a94f32983f00030db
+ * Source SHA-256: 7844a8a3f9b9ab1def2eacf7d917e8ff15f9ef182f2d139e12081b5fff3ea444
  */
 import {
   HIGHLIGHTER_OPACITY,
@@ -220,7 +220,7 @@ function parseLink(value: unknown, index: number): InkLink {
   if (!Array.isArray(strokeIds) || !strokeIds.every((strokeId) => typeof strokeId === "string")) {
     throw new InkFormatError(`link ${id} has invalid stroke ids.`);
   }
-  return { id, target, strokeIds: strokeIds as string[] };
+  return { id, target, strokeIds };
 }
 
 /**

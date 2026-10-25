@@ -1,6 +1,6 @@
 {
   "name": "bloommd-obsidian",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "license": "MIT",
   "private": true,
   "description": "BloomMD companion plugin for Obsidian",

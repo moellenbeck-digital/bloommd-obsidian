@@ -1,7 +1,7 @@
 /**
  * GENERATED FILE — DO NOT EDIT.
  * Snapshot of packages/core/src/agent-ledger.ts by the BloomMD mirror sync.
- * Source SHA-256: e08ac0a9ed258d08467bd18c269101e1b85e357ed7826d8425b6a458e2df8c67
+ * Source SHA-256: 4c0df04e56db1e93d0c2ff8e3c2c603748b820992dcf4c373a38708d077deaff
  */
 /**
  * The agent's state next to a knowledge target (`.bloommd/` in a vault): rights (`agent.json`),
@@ -276,11 +276,11 @@ export class AgentLedger {
    * Refused when the document changed since the proposal, unless the person saw the current state
    * and decided to apply it anyway (`overwrite`); the history keeps what it replaced.
    */
-  async applyProposal(proposal: AgentProposal, reviewer: string, documents: AgentDocuments, options: { overwrite?: boolean } = {}) {
-    const current = await documents.read(proposal.path);
+  async applyProposal(proposal: AgentProposal, reviewer: string, store: AgentDocuments, options: { overwrite?: boolean } = {}) {
+    const current = await store.read(proposal.path);
     const changed = (proposal.baseVersion === null) !== (current === null) || (current !== null && current.version !== proposal.baseVersion);
     if (changed && !options.overwrite) throw new AgentProposalConflictError(proposal, current);
-    const written = await documents.write(proposal.path, proposal.markdown, changed ? current?.version ?? null : proposal.baseVersion);
+    const written = await store.write(proposal.path, proposal.markdown, changed ? current?.version ?? null : proposal.baseVersion);
     const changeId = await this.remember({ origin: "approved", tool: `${proposal.tool} (approved by ${reviewer})`, path: proposal.path, before: current?.markdown ?? null, afterVersion: written.version, reason: proposal.reason, source: proposal.source });
     await this.files.remove(`proposals/${proposal.id}.json`);
     await this.log({ event: "approved", path: proposal.path, proposalId: proposal.id, changeId, reviewer, ...(changed ? { overwrote: current?.version ?? null } : {}) });
@@ -302,9 +302,9 @@ export class AgentLedger {
    * change a person approved is never undone by the agent. `asOwner` (CLI, Obsidian) may undo any
    * change.
    */
-  async undo(changeId: string, documents: AgentDocuments, options: { asOwner?: boolean; areaOf: (path: string) => string }) {
+  async undo(changeId: string, store: AgentDocuments, options: { asOwner?: boolean; areaOf: (path: string) => string }) {
     const record = await this.change(changeId);
-    const current = await documents.read(record.path);
+    const current = await store.read(record.path);
     if (!current || current.version !== record.afterVersion) throw new Error(`${record.path} was edited after change ${changeId}; undo it by hand.`);
     if (!options.asOwner) {
       // Entries from before `origin` existed: approved ones carry the reviewer in the tool name.
@@ -322,10 +322,10 @@ export class AgentLedger {
       }
     }
     if (record.before === null) {
-      if (!documents.remove) throw new Error("Removing a created cloud map is not supported; delete it in BloomMD.");
-      await documents.remove(record.path);
+      if (!store.remove) throw new Error("Removing a created cloud map is not supported; delete it in BloomMD.");
+      await store.remove(record.path);
     } else {
-      await documents.write(record.path, record.before, current.version);
+      await store.write(record.path, record.before, current.version);
     }
     await this.files.remove(`history/${changeId}.json`);
     await this.log({ event: "undone", path: record.path, changeId, ...(options.asOwner ? { by: "owner" } : {}) });

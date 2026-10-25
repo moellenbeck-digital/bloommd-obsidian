@@ -3,7 +3,7 @@
  * does not index (dot folder), so it goes through the vault adapter; that works on desktop and on
  * iPad. Notes go through the Vault API, so open editors and the map see every change.
  */
-import type { App, DataAdapter, TFile } from "obsidian";
+import { TFile, type App, type DataAdapter } from "obsidian";
 import { isVaultNotePath, knowledgeVersion, type AgentDocuments, type AgentStateFiles } from "./agent-ledger";
 
 export const AGENT_STATE_DIR = ".bloommd";
@@ -50,7 +50,7 @@ export function vaultAgentDocuments(app: App): AgentDocuments {
   const file = (path: string): TFile | null => {
     if (!isVaultNotePath(path)) throw new Error(`"${path}" is not a note inside the vault.`);
     const entry = app.vault.getAbstractFileByPath(path);
-    return entry && "extension" in entry ? (entry as TFile) : null;
+    return entry instanceof TFile ? entry : null;
   };
   return {
     async read(path) {

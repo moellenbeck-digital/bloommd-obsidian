@@ -56,7 +56,7 @@ import { BLOOMMD_DOWNLOAD_URL, desktopNodeId, desktopOpenUrl, mobileOpenUrl } fr
 import { desktopDeps, openNoteInDesktop } from "./desktop-handoff";
 import { MAP_INK_PROPERTY, createLinkedMapInk, mapInkLink, retargetLinkedNotes, withLinkedNote } from "./concept-map";
 import { migratePersistedPathState } from "./path-migration";
-import { LEARNING_FOLDER, emptyLearningFile, learningFilePath, learningKey, normalizeLearningSettings, rateEntry, type LearningFile, type LearningSettings, type StudyOrder } from "./learning";
+import { LEARNING_FOLDER, emptyLearningFile, learningFilePath, learningKey, normalizeLearningSettings, rateEntry, type LearningFile, type LearningSettings } from "./learning";
 import { LearningStore } from "./learning-store";
 import { STUDY_ORDERS } from "./learning-panel";
 import { AgentHub, confirmAction } from "./agent-view";
@@ -129,7 +129,7 @@ class SharedDocumentChoiceModal extends SuggestModal<SharedDocumentChoice> {
   }
 
   renderSuggestion(choice: SharedDocumentChoice, element: HTMLElement): void {
-    element.createEl("div", { text: choice.kind === "new" ? `Create new: ${choice.filename}` : `Bind existing: ${choice.filename}` });
+    element.createDiv({ text: choice.kind === "new" ? `Create new: ${choice.filename}` : `Bind existing: ${choice.filename}` });
     element.createEl("small", { text: choice.kind === "new" ? "Only this note will be uploaded." : "No new cloud document will be created." });
   }
 
@@ -1657,7 +1657,6 @@ class BloomMDSettingTab extends PluginSettingTab {
       this.plugin.settings.learning = next;
       if (redraw) {
         this.update();
-        this.display();
       }
     }
     return this.plugin.saveSettings();

@@ -1,7 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { App, DataAdapter } from "obsidian";
-import { AgentLedger, AgentProposalConflictError, knowledgeVersion, vaultArea } from "./agent-ledger";
-import { vaultAgentDocuments, vaultAgentFiles } from "./agent-vault";
+
+// The obsidian package ships types only; the adapter narrows vault entries with `instanceof TFile`.
+class TFile {
+  constructor(readonly path: string, readonly extension: string) {}
+}
+mock.module("obsidian", () => ({ TFile }));
+
+const { AgentLedger, AgentProposalConflictError, knowledgeVersion, vaultArea } = await import("./agent-ledger");
+const { vaultAgentDocuments, vaultAgentFiles } = await import("./agent-vault");
 
 /**
  * A vault as Obsidian's adapter and Vault API see it. Like the iPad adapter, `mkdir` and `write`
@@ -30,7 +37,7 @@ function fakeVault() {
     },
     list: async (path: string) => ({ files: [...files.keys()].filter((name) => parent(name) === path), folders: [] }),
   } as unknown as DataAdapter;
-  const file = (path: string) => ({ path, extension: "md" });
+  const file = (path: string) => new TFile(path, "md");
   const app = {
     vault: {
       adapter,

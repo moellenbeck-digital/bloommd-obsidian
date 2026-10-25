@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+Code quality fixes from the Obsidian community plugin review; no change in behaviour.
+
+- Styles of the map pen toolbar are set with `setCssStyles`, animation frames use `window.requestAnimationFrame` (popout windows), DOM elements are created with Obsidian's `createEl`/`createDiv`, cross-window `instanceOf` checks, `instanceof TFile` instead of a cast.
+- The settings tab refreshes with `update()` (Obsidian 1.13 declarative settings) instead of the deprecated `display()`.
+- Stricter type checking (`noUncheckedIndexedAccess`, as in the rest of BloomMD); unnecessary type assertions removed.
+
 ## 0.7.0
 
 BloomMD 0.7.0 is the first public release since 0.5.12 and includes everything from 0.6.0, which was not published separately. It is the first version for Obsidian on iPad, iPhone and Android as well as desktop.
