@@ -1,4 +1,9 @@
 /**
+ * GENERATED FILE — DO NOT EDIT.
+ * Snapshot of packages/ui/src/export/map-export-core.ts by the BloomMD mirror sync.
+ * Source SHA-256: 0fa83761d517f2cc1fd1beaa5a88a555063ea77c828ad1515e1118a2cbb37a57
+ */
+/**
  * Minimal single-page PDF around one JPEG image. A full PDF library would cost far more of the
  * plugin's bundle budget than this one page needs.
  */
@@ -72,4 +77,116 @@ export function exportSize(bounds: { width: number; height: number }, padding = 
   const contentHeight = Math.max(1, bounds.height + padding * 2);
   const scale = Math.min(2, maxSide / Math.max(contentWidth, contentHeight));
   return { width: Math.round(contentWidth * scale), height: Math.round(contentHeight * scale), scale };
+}
+
+export interface MapExportRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Bounding box of node rectangles in flow coordinates; `null` for an empty map. */
+export function boundsOfRects(rects: readonly MapExportRect[]): MapExportRect | null {
+  if (rects.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const rect of rects) {
+    minX = Math.min(minX, rect.x);
+    minY = Math.min(minY, rect.y);
+    maxX = Math.max(maxX, rect.x + rect.width);
+    maxY = Math.max(maxY, rect.y + rect.height);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** Reads `translate(Xpx, Ypx)` from the inline transform React Flow puts on every node. */
+export function parseNodeTranslate(transform: string): { x: number; y: number } | null {
+  const match = /translate\(\s*(-?[\d.]+(?:e-?\d+)?)px\s*,\s*(-?[\d.]+(?:e-?\d+)?)px\s*\)/i.exec(transform);
+  if (!match) return null;
+  const x = Number.parseFloat(match[1] ?? "");
+  const y = Number.parseFloat(match[2] ?? "");
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+export interface MapExportEdge {
+  d: string;
+  stroke: string;
+  strokeWidth: number;
+  dashArray?: number[];
+  lineCap?: string;
+}
+
+/** A filled path painted above the nodes, such as handwriting on the map. */
+export interface MapExportOverlayPath {
+  d: string;
+  fill: string;
+  opacity?: number;
+}
+
+export interface MapExportView {
+  /** Pixel offset and scale that move flow coordinates into the exported image. */
+  x: number;
+  y: number;
+  scale: number;
+}
+
+/** Places `bounds` (plus padding) in an image of `size`, at the scale `exportSize` chose. */
+export function exportView(bounds: MapExportRect, size: { scale: number }, padding = 48): MapExportView {
+  return { x: (padding - bounds.x) * size.scale, y: (padding - bounds.y) * size.scale, scale: size.scale };
+}
+
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function numberAttribute(value: number): string {
+  return Number.isFinite(value) ? String(Math.round(value * 1000) / 1000) : "0";
+}
+
+/**
+ * Assembles the SVG export. The background and the edges are plain vector elements; the nodes come
+ * from html-to-image as a `foreignObject` (live text and boxes, not a bitmap) and are copied over
+ * from the SVG it renders. The result is one standalone file that browsers open directly.
+ */
+export function composeMapSvg(options: {
+  width: number;
+  height: number;
+  background: string;
+  view: MapExportView;
+  edges: readonly MapExportEdge[];
+  /** SVG markup produced by html-to-image `toSvg` for the nodes layer. */
+  nodesSvg: string;
+  overlay?: readonly MapExportOverlayPath[];
+}): string {
+  const { width, height, background, view, edges, nodesSvg } = options;
+  const start = nodesSvg.indexOf("<foreignObject");
+  const end = nodesSvg.lastIndexOf("</foreignObject>");
+  if (start === -1 || end === -1) throw new Error("The rendered nodes layer has no content.");
+  const nodes = nodesSvg.slice(start, end + "</foreignObject>".length);
+  const w = numberAttribute(width);
+  const h = numberAttribute(height);
+  const paths = edges
+    .map((edge) => {
+      const dash = edge.dashArray && edge.dashArray.length > 0 ? ` stroke-dasharray="${edge.dashArray.map(numberAttribute).join(" ")}"` : "";
+      const cap = edge.lineCap ? ` stroke-linecap="${escapeAttribute(edge.lineCap)}"` : "";
+      return `<path d="${escapeAttribute(edge.d)}" stroke="${escapeAttribute(edge.stroke)}" stroke-width="${numberAttribute(edge.strokeWidth)}"${dash}${cap}/>`;
+    })
+    .join("");
+  return [
+    `<?xml version="1.0" encoding="UTF-8"?>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
+    `<rect width="100%" height="100%" fill="${escapeAttribute(background)}"/>`,
+    `<g transform="translate(${numberAttribute(view.x)} ${numberAttribute(view.y)}) scale(${numberAttribute(view.scale)})" fill="none">${paths}</g>`,
+    nodes,
+    ...(options.overlay && options.overlay.length > 0
+      ? [`<g transform="translate(${numberAttribute(view.x)} ${numberAttribute(view.y)}) scale(${numberAttribute(view.scale)})">${options.overlay
+          .map((path) => `<path d="${escapeAttribute(path.d)}" fill="${escapeAttribute(path.fill)}"${path.opacity !== undefined && path.opacity !== 1 ? ` fill-opacity="${numberAttribute(path.opacity)}"` : ""}/>`)
+          .join("")}</g>`]
+      : []),
+    `</svg>`,
+    ``,
+  ].join("\n");
 }

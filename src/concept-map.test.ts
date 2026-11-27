@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { borderPoint, connectionFromStroke, createLinkedMapInk, floatingEdgeEnds, freePosition, mapInkLink, studyCards, studyProgress, relationEdges, retargetLinkedNotes, withKind, withLinkedNote, withRelations } from "./concept-map";
+import { backlinkEdges, borderPoint, connectionFromStroke, createLinkedMapInk, floatingEdgeEnds, freePosition, mapInkLink, wikiLinkTargets, studyCards, studyProgress, relationEdges, retargetLinkedNotes, withKind, withLinkedNote, withRelations } from "./concept-map";
 import { parseHeadingTree } from "./markdown-document";
 
 describe("withLinkedNote", () => {
@@ -169,5 +169,159 @@ describe("createLinkedMapInk", () => {
     expect(path).toBe("x.svg");
     expect(linked).toEqual(["x.svg"]);
     expect(warnings).toEqual([]);
+  });
+});
+
+describe("backlinkEdges", () => {
+  type Node = Parameters<typeof backlinkEdges>[0][number];
+  const node = (id: string, parentId: string | null, title: string, content = ""): Node => ({ id, parentId, title, content, kind: "heading" });
+  const NOTE = "Note.md";
+  const files: Record<string, string> = { Note: NOTE, Other: "Other.md" };
+  const resolver = { notePath: NOTE, resolve: (link: string) => files[link] ?? null };
+  const all = (nodes: Node[]) => new Set(nodes.map((entry) => entry.id));
+  const pairs = (edges: Array<{ source: string; target: string }>) => edges.map((edge) => `${edge.source}->${edge.target}`);
+  const base = (alpha: string, extra: Node[] = []): Node[] => [
+    node("r", null, "Map"),
+    node("a", "r", "Alpha", alpha),
+    node("b", "r", "Beta"),
+    node("c", "a", "Gamma"),
+    node("d", "b", "Delta"),
+    ...extra,
+  ];
+  const run = (nodes: Node[], options: { visible?: Set<string>; relations?: Array<{ source: string; target: string }> } = {}) =>
+    backlinkEdges(nodes, options.visible ?? all(nodes), resolver, options.relations);
+
+  test("a heading link points from the linking node to the linked node", () => {
+    const { edges, unresolved } = run(base("see [[#Beta]]"));
+    expect(edges).toEqual([{ id: "backlink:a:b", source: "a", target: "b" }]);
+    expect(unresolved).toEqual([]);
+  });
+
+  test("a link with the note name and a heading fragment resolves in the same note", () => {
+    expect(pairs(run(base("[[Note#Beta]] and [[Note#delta|alias]]")).edges)).toEqual(["a->b", "a->d"]);
+  });
+
+  test("a BloomMD node id works as the fragment, also as bloommd:id=", () => {
+    expect(pairs(run(base("[[#d]] [[Note#bloommd:id=b]]")).edges)).toEqual(["a->d", "a->b"]);
+  });
+
+  test("an id wins over a heading that happens to carry the same title", () => {
+    const nodes = base("[[#d]]", [node("x", "r", "d")]);
+    expect(pairs(run(nodes).edges)).toEqual(["a->d"]);
+  });
+
+  test("embeds and fenced code are not links", () => {
+    const { edges, unresolved } = run(base("![[#Beta]]\n```\n[[#Delta]]\n```\n![[Missing.png]]"));
+    expect(edges).toEqual([]);
+    expect(unresolved).toEqual([]);
+  });
+
+  test("the same link written twice gives one edge", () => {
+    expect(pairs(run(base("[[#Beta]] and again [[Note#Beta]] [[#Beta|alias]]")).edges)).toEqual(["a->b"]);
+  });
+
+  test("links in both directions are two edges", () => {
+    const nodes = [node("r", null, "Map"), node("a", "r", "Alpha", "[[#Beta]]"), node("b", "r", "Beta", "[[#Alpha]]")];
+    expect(pairs(run(nodes).edges)).toEqual(["a->b", "b->a"]);
+  });
+
+  test("a link to itself is not an edge", () => {
+    const { edges, unresolved } = run(base("[[#Alpha]] [[Note#Alpha]]"));
+    expect(edges).toEqual([]);
+    expect(unresolved).toEqual([]);
+  });
+
+  test("a link that only repeats the hierarchy is not drawn again", () => {
+    expect(run(base("[[#Gamma]] [[#Map]]")).edges).toEqual([]);
+    const nodes = base("", []);
+    nodes[4] = node("d", "b", "Delta", "[[#Beta]]");
+    expect(run(nodes).edges).toEqual([]);
+  });
+
+  test("a link that only repeats a relation is not drawn again, in either direction", () => {
+    const nodes = base("[[#Delta]]");
+    expect(run(nodes, { relations: [{ source: "d", target: "a" }] }).edges).toEqual([]);
+    expect(run(nodes, { relations: [{ source: "a", target: "d" }] }).edges).toEqual([]);
+    expect(pairs(run(nodes, { relations: [{ source: "a", target: "b" }] }).edges)).toEqual(["a->d"]);
+  });
+
+  test("collapsed nodes get no edges, and an edge to a collapsed node is not drawn", () => {
+    const nodes = base("[[#Delta]]", [node("e", "d", "Echo", "[[#Beta]] [[#Missing]]")]);
+    const hidden = all(nodes);
+    hidden.delete("d");
+    hidden.delete("e");
+    const { edges, unresolved } = run(nodes, { visible: hidden });
+    expect(edges).toEqual([]);
+    expect(unresolved).toEqual([]);
+  });
+
+  test("a link to a heading or note that does not exist is reported as broken, not guessed", () => {
+    const { edges, unresolved } = run(base("[[#Nope]] [[Missing]] [[Note#Nope]]"));
+    expect(edges).toEqual([]);
+    expect(unresolved).toEqual([
+      { source: "a", link: "#Nope", reason: "broken" },
+      { source: "a", link: "Missing", reason: "broken" },
+      { source: "a", link: "Note#Nope", reason: "broken" },
+    ]);
+  });
+
+  test("a heading title that exists twice is ambiguous and gets no edge", () => {
+    const nodes = base("[[#Echo]]", [node("e1", "b", "Echo"), node("e2", "c", "echo ")]);
+    const { edges, unresolved } = run(nodes);
+    expect(edges).toEqual([]);
+    expect(unresolved).toEqual([{ source: "a", link: "#Echo", reason: "ambiguous" }]);
+  });
+
+  test("a nested fragment narrows down a repeated title", () => {
+    const nodes = base("[[#Beta#Echo]]", [node("e1", "b", "Echo"), node("e2", "c", "Echo")]);
+    const { edges, unresolved } = run(nodes);
+    expect(pairs(edges)).toEqual(["a->e1"]);
+    expect(unresolved).toEqual([]);
+    expect(run(base("[[#Delta#Echo]]", [node("e1", "b", "Echo")])).unresolved).toEqual([{ source: "a", link: "#Delta#Echo", reason: "broken" }]);
+  });
+
+  test("links to other notes, the whole note and block references are outside the map", () => {
+    const { edges, unresolved } = run(base("[[Other]] [[Other#Beta]] [[Note]] [[#^abc123]] [[Note#^abc123]]"));
+    expect(edges).toEqual([]);
+    expect(unresolved).toEqual([]);
+  });
+
+  test("a node reports each broken link once", () => {
+    expect(run(base("[[#Nope]] [[#Nope]]")).unresolved).toHaveLength(1);
+  });
+
+  describe("folder maps", () => {
+    const file = (name: string): Node => ({ id: `file:${name}.md`, parentId: "folder:/", title: name, content: `${name}.md`, kind: "file", filePath: `${name}.md` });
+    const folder: Node = { id: "folder:/", parentId: null, title: "Vault", content: "", kind: "folder" };
+    const links: Record<string, string[]> = {
+      "One.md": ["Two", "Three#Section", "Two", "Ghost", "One", "Elsewhere"],
+      "Two.md": ["One"],
+    };
+    const known: Record<string, string> = { One: "One.md", Two: "Two.md", Three: "Three.md", Elsewhere: "Outside/Elsewhere.md" };
+    const folderResolver = { notePath: null, resolve: (link: string) => known[link] ?? null, linksOf: (path: string) => links[path] ?? [] };
+    const nodes = [folder, file("One"), file("Two"), file("Three")];
+
+    test("file nodes link to file nodes through Obsidian's link resolution", () => {
+      const { edges, unresolved } = backlinkEdges(nodes, all(nodes), folderResolver);
+      expect(pairs(edges)).toEqual(["file:One.md->file:Two.md", "file:One.md->file:Three.md", "file:Two.md->file:One.md"]);
+      expect(unresolved).toEqual([{ source: "file:One.md", link: "Ghost", reason: "broken" }]);
+    });
+
+    test("links to files outside the folder are not part of the map", () => {
+      const { edges } = backlinkEdges(nodes, all(nodes), folderResolver);
+      expect(edges.some((edge) => edge.target.includes("Elsewhere"))).toBe(false);
+    });
+
+    test("a collapsed folder hides its file nodes' edges", () => {
+      const visible = all(nodes);
+      visible.delete("file:Two.md");
+      expect(pairs(backlinkEdges(nodes, visible, folderResolver).edges)).toEqual(["file:One.md->file:Three.md"]);
+    });
+  });
+});
+
+describe("wikiLinkTargets", () => {
+  test("keeps the fragment, drops the alias and the embeds", () => {
+    expect(wikiLinkTargets("[[A]] [[B#H|label]] ![[C.png]] [[A]] [[ #X ]]")).toEqual(["A", "B#H", "#X"]);
   });
 });

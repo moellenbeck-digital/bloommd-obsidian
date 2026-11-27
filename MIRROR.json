@@ -3,16 +3,16 @@
   "mode": "release-mirror",
   "canonicalRepository": "moellenbeck-digital/BloomMD",
   "canonicalPath": "plugins/obsidian",
-  "sourceCommit": "9530af91922f3298f619805155989419d48d7771",
+  "sourceCommit": "8597dba12f5ff0d9c2cdc162f579c8a2106f5ccc",
   "sourceDirty": false,
-  "sourceManifestSha256": "94e672619a2b9372f7dd708aa76026ba87dcb8732cadfd5b637d36188514afc9",
-  "releaseSnapshotSha256": "d1e535cc6e3faf6bccba9f8ac323f5d433719b98660f85b39078e67ff02ccfe2",
-  "pluginVersion": "0.7.1",
+  "sourceManifestSha256": "8b59334bb88b1905c381f4a4f3eac2680477c920c51767bde62519dc036ca140",
+  "releaseSnapshotSha256": "83bd1d9f01afd39929a5e9c6e3d846e57937c3cb2d79dfbaee8d80f1f153c6cf",
+  "pluginVersion": "0.8.0",
   "core": {
     "sourcePath": "packages/core/src/obsidian-markdown.ts",
-    "sourceSha256": "79d5701c3ca17735f2da0ba8318af49d5b11b87d2558432df05af9e53c0ae8a2",
+    "sourceSha256": "ad8eccab3b33c45ba69d4cdbb3b46daf584168c6d40ccaa88ed2f7f56d47f80b",
     "generatedPath": "src/markdown-document.ts",
-    "generatedSha256": "c9c2ddff41292a7f1352f3ca1343ea3dd9ae0939f7bc63c45c0a115c8d43fb25"
+    "generatedSha256": "25ac0b6490f1bb12966bd441feb59a15ef06918c2f88d614d7f627d3b02ca036"
   },
   "coreTypes": {
     "sourcePath": "packages/core/src/types.ts",
@@ -26,12 +26,50 @@
     "generatedPath": "src/learning.ts",
     "generatedSha256": "86fb71be18b7d8d20c190d3bce9ab62913dea3d8cff7f04679c14e2a3b4269d7"
   },
+  "noteTemplates": {
+    "sourcePath": "packages/core/src/note-templates.ts",
+    "sourceSha256": "d49bb1348659db65c3d5c671fa2677eb8486871c70020c8c2b8bc48a2b510412",
+    "generatedPath": "src/note-templates.ts",
+    "generatedSha256": "0b5f0d1a77c989ac744e492daf413d94fdd3fa63a9f1f5f02d08fd86605710fb"
+  },
   "agentLedger": {
     "sourcePath": "packages/core/src/agent-ledger.ts",
-    "sourceSha256": "4c0df04e56db1e93d0c2ff8e3c2c603748b820992dcf4c373a38708d077deaff",
+    "sourceSha256": "94c774f749b270270fb10d4850a52a288f82e44e87611dd5a510b2718193aebb",
     "generatedPath": "src/agent-ledger.ts",
-    "generatedSha256": "7231576222c6641be72db75693b3b5d02df1b16380babf5af9cc571b3c0a81d1"
+    "generatedSha256": "f9cff8096b310f61cb0c18143b6c81649ff4987e469c48b6f6afb18f894f8a32"
   },
+  "opml": {
+    "sourcePath": "packages/core/src/opml.ts",
+    "sourceSha256": "169f72cf2ca156a21af89224bd0878e66b410345ff9ce554e91a798bfb37d76f",
+    "generatedPath": "src/opml.ts",
+    "generatedSha256": "96b22b5d331dc63be5e9f0738ec441b7f3de49b39952cfa0c070ace7fdf85fbc"
+  },
+  "assetPath": {
+    "sourcePath": "packages/core/src/asset-path.ts",
+    "sourceSha256": "1697ca0bc76b832946373b5b642d7e9d7acbd2d555ea30b1d4071920d698648b",
+    "generatedPath": "src/asset-path.ts",
+    "generatedSha256": "6b0e06a151287b2dc6fa9f7a936f84e1add2e33ff1285eebb9a10504e64ca704"
+  },
+  "mapExport": {
+    "sourcePath": "packages/ui/src/export/map-export-core.ts",
+    "sourceSha256": "0fa83761d517f2cc1fd1beaa5a88a555063ea77c828ad1515e1118a2cbb37a57",
+    "generatedPath": "src/map-export.ts",
+    "generatedSha256": "af7af4ff0c242741d650aff2b4c3c37ac565193ce3045f52bc296e9cd1d0ceb0"
+  },
+  "workspaceNodes": [
+    {
+      "sourcePath": "packages/ui/src/workspace/workspace-nodes.tsx",
+      "sourceSha256": "e16b79bd6cace359015ad4657af71970f267a927d22e4a89e3f0969447a5c75c",
+      "generatedPath": "src/workspace-nodes.tsx",
+      "generatedSha256": "050ab01f440a04d74d10811f8bd64b55dc5b059ac6951fbaceaf7ca5d7befa09"
+    },
+    {
+      "sourcePath": "packages/ui/src/workspace/workspace-nodes.css",
+      "sourceSha256": "62797d20cd29889efd58c5048e64c5821c78ee9e7ffa128d97343459c2bd5857",
+      "generatedPath": "src/workspace-nodes.css",
+      "generatedSha256": "f95277c21696dcffbc3db9c58671a319284b75b0c3dfc2d145670a0575a93f2d"
+    }
+  ],
   "ink": [
     {
       "sourcePath": "packages/ink/src/ink-geometry.ts",
@@ -59,9 +97,9 @@
     },
     {
       "sourcePath": "packages/ink/src/ink-editor.tsx",
-      "sourceSha256": "aabf8f9bf781853d6a94da886f6027bb548bfaa8bd3113d6df64c1756a94d8f1",
+      "sourceSha256": "c63c642f2b0dbe5685bc2a25165c6ab0805ab24b390f0f04719b3cf3459dd9c1",
       "generatedPath": "src/ink-editor.tsx",
-      "generatedSha256": "c6d8bc4b6f910fd9c684756671b80f3f23ebef08bf30469b96a91c5ac0e5b974"
+      "generatedSha256": "5ada20488364b4e394fa303c5cea1339fe18b622df04b97e1d9a99c9245c2fe2"
     },
     {
       "sourcePath": "packages/ink/src/pen-gestures.ts",
@@ -80,6 +118,6 @@
     "sourcePath": "scripts/obsidian-mirror-shared-runtime.ts",
     "sourceSha256": "e7ff571bd576c8d7a34af8dd66915bc645620166403b401e64de104b5d183d79",
     "generatedPath": "src/shared-dependencies-runtime.js",
-    "generatedSha256": "9e33cb708d5cfc3cbe5b336cc4f9b6934573d2a5955473c7d39144ae3ed05af6"
+    "generatedSha256": "3d593761fd0a4493ad16985c8a3d94505c2e280f3d486d249007819892a858bc"
   }
 }

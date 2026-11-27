@@ -3,7 +3,7 @@
  *
  * This standalone release snapshot is generated from
  * packages/core/src/obsidian-markdown.ts by the BloomMD mirror sync.
- * Source SHA-256: 79d5701c3ca17735f2da0ba8318af49d5b11b87d2558432df05af9e53c0ae8a2
+ * Source SHA-256: ad8eccab3b33c45ba69d4cdbb3b46daf584168c6d40ccaa88ed2f7f56d47f80b
  */
 import type { MindMapNodeKind, MindMapNodeMetadata, MindMapNodeRelation } from "./core-types";
 
@@ -92,6 +92,14 @@ function parseRelations(value: unknown): { relations: MindMapNodeRelation[] } | 
   return relations.length > 0 ? { relations } : {};
 }
 
+/** `owner` is read as an alias of `assignee`; the stored field stays `assignee` (the explicit one wins). Duplicated in both Markdown parsers, see parseRelations. */
+function parseAssignee(value: { assignee?: unknown; owner?: unknown }): { assignee: string } | Record<string, never> {
+  for (const candidate of [value.assignee, value.owner]) {
+    if (typeof candidate === "string" && candidate.trim()) return { assignee: candidate.trim().slice(0, 120) };
+  }
+  return {};
+}
+
 function parseNodeMetadata(title: string): MarkdownNodeMetadata | undefined {
   const value = title.match(/<!--\s*bloommd:meta=(\{.*\})\s*-->/i)?.[1];
   if (!value) return undefined;
@@ -114,7 +122,7 @@ function parseNodeMetadata(title: string): MarkdownNodeMetadata | undefined {
       ...(record.decision === "proposed" || record.decision === "accepted" || record.decision === "rejected" ? { decision: record.decision } : {}),
       ...(typeof record.note === "string" && record.note.trim() ? { note: record.note } : {}),
       ...(typeof record.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(record.due) ? { due: record.due } : {}),
-      ...(typeof record.assignee === "string" && record.assignee.trim() ? { assignee: record.assignee.trim().slice(0, 120) } : {}),
+      ...parseAssignee(record),
       ...parseRelations(record.relations),
     };
   } catch (error) {

@@ -79,6 +79,162 @@ export function relationEdges(
   return edges;
 }
 
+export type BacklinkProblem = "broken" | "ambiguous";
+
+export interface BacklinkEdge {
+  id: string;
+  /** The node whose content links... */
+  source: string;
+  /** ...to this node. The arrow runs source → target. */
+  target: string;
+}
+
+/** A link that was not turned into an edge, shown as a warning on its source node. */
+export interface UnresolvedBacklink {
+  source: string;
+  /** The link as written, without brackets or alias. */
+  link: string;
+  reason: BacklinkProblem;
+}
+
+export interface BacklinkNode {
+  id: string;
+  parentId: string | null;
+  title: string;
+  content: string;
+  kind: "heading" | "file" | "folder";
+  /** Vault path of a file node. */
+  filePath?: string;
+}
+
+export interface BacklinkResolver {
+  /** Vault path of the note a single-note map shows; null for a folder map. */
+  notePath: string | null;
+  /** Obsidian's link resolution: where `linkpath` (no `#fragment`) written in `fromPath` points, or null. */
+  resolve: (linkpath: string, fromPath: string) => string | null;
+  /** Links a note writes, as link text; folder-map file nodes have no content of their own. */
+  linksOf?: (path: string) => string[];
+}
+
+/** `[[…]]` links as written (target with fragment, no alias); embeds and fenced code do not count. */
+export function wikiLinkTargets(markdown: string): string[] {
+  const targets: string[] = [];
+  const seen = new Set<string>();
+  // No lookbehind: older iOS WebKit lacks it.
+  for (const match of markdown.replace(/```[\s\S]*?```/g, " ").matchAll(/(!?)\[\[([^\]|]+)(?:\|[^\]]+)?]]/g)) {
+    const target = (match[2] ?? "").trim();
+    if (match[1] || !target || seen.has(target)) continue;
+    seen.add(target);
+    targets.push(target);
+  }
+  return targets;
+}
+
+const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * Which heading nodes a fragment (`Heading`, `Page#Heading#Sub`, a BloomMD node id or
+ * `bloommd:id=<id>`) names. Titles match like Obsidian does: ignoring case and spacing; a nested
+ * fragment narrows the candidates to those under the outer headings.
+ */
+function headingsForFragment(fragment: string, nodes: BacklinkNode[], parentOf: Map<string, string | null>, byId: Map<string, BacklinkNode>): BacklinkNode[] {
+  const segments = fragment.split("#").map((segment) => segment.trim()).filter(Boolean);
+  const last = segments[segments.length - 1];
+  if (!last) return [];
+  const id = last.replace(/^bloommd:id=/i, "");
+  const byNodeId = byId.get(id);
+  if (byNodeId?.kind === "heading") return [byNodeId];
+  const wanted = normalizeTitle(last);
+  const candidates = nodes.filter((node) => node.kind === "heading" && normalizeTitle(node.title) === wanted);
+  if (segments.length === 1) return candidates;
+  return candidates.filter((candidate) => {
+    let index = segments.length - 2;
+    let current = parentOf.get(candidate.id) ?? null;
+    while (current && index >= 0) {
+      if (normalizeTitle(byId.get(current)?.title ?? "") === normalizeTitle(segments[index]!)) index -= 1;
+      current = parentOf.get(current) ?? null;
+    }
+    return index < 0;
+  });
+}
+
+/**
+ * Backlink edges: an edge from node B to node A when B links to A. A pure view derived from the
+ * links; it never writes anything. In a single-note map, headings link to headings of the same
+ * note (`[[#Heading]]`, `[[Note#Heading]]`, or the node id as the fragment). In a folder map, file
+ * nodes link to file nodes. A link whose target cannot be found (`broken`) or names several nodes
+ * (`ambiguous`) is not guessed at; it lands in `unresolved`. Links that leave the map (another note,
+ * a file outside the folder) are not part of it and are ignored. Nodes that are not `visible`
+ * (collapsed away) get neither edges nor warnings, and an edge that would only repeat a
+ * hierarchy edge or one of the `relations` is left out, like relation edges do.
+ */
+export function backlinkEdges(
+  nodes: BacklinkNode[],
+  visible: Set<string>,
+  resolver: BacklinkResolver,
+  relations: Array<{ source: string; target: string }> = [],
+): { edges: BacklinkEdge[]; unresolved: UnresolvedBacklink[] } {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const parentOf = new Map(nodes.map((node) => [node.id, node.parentId]));
+  const fileNodes = new Map<string, string>();
+  for (const node of nodes) if (node.kind === "file" && node.filePath) fileNodes.set(node.filePath, node.id);
+  const pair = (a: string, b: string) => [a, b].sort().join("\u0000");
+  const covered = new Set(relations.map((relation) => pair(relation.source, relation.target)));
+  const edges: BacklinkEdge[] = [];
+  const unresolved: UnresolvedBacklink[] = [];
+  const seenEdges = new Set<string>();
+  const seenProblems = new Set<string>();
+
+  const problem = (source: string, link: string, reason: BacklinkProblem) => {
+    const key = `${source}\u0000${link}`;
+    if (seenProblems.has(key)) return;
+    seenProblems.add(key);
+    unresolved.push({ source, link, reason });
+  };
+  const connect = (source: string, target: string) => {
+    if (source === target || !visible.has(target)) return;
+    if (parentOf.get(target) === source || parentOf.get(source) === target || covered.has(pair(source, target))) return;
+    const id = `backlink:${source}:${target}`;
+    if (seenEdges.has(id)) return;
+    seenEdges.add(id);
+    edges.push({ id, source, target });
+  };
+
+  for (const node of nodes) {
+    if (!visible.has(node.id)) continue;
+    if (node.kind === "heading" && resolver.notePath !== null) {
+      const notePath = resolver.notePath;
+      for (const link of wikiLinkTargets(node.content)) {
+        const hash = link.indexOf("#");
+        const linkpath = (hash < 0 ? link : link.slice(0, hash)).trim();
+        const fragment = hash < 0 ? "" : link.slice(hash + 1);
+        const destination = linkpath ? resolver.resolve(linkpath, notePath) : notePath;
+        if (destination === null) problem(node.id, link, "broken");
+        // The whole note, a block reference, or another note: no heading of this map is meant.
+        else if (destination !== notePath || !fragment.trim() || fragment.startsWith("^")) continue;
+        else {
+          const found = headingsForFragment(fragment, nodes, parentOf, byId);
+          if (found.length === 0) problem(node.id, link, "broken");
+          else if (found.length > 1) problem(node.id, link, "ambiguous");
+          else connect(node.id, found[0]!.id);
+        }
+      }
+    } else if (node.kind === "file" && node.filePath && resolver.linksOf) {
+      for (const link of resolver.linksOf(node.filePath)) {
+        const hash = link.indexOf("#");
+        const linkpath = (hash < 0 ? link : link.slice(0, hash)).trim();
+        const destination = linkpath ? resolver.resolve(linkpath, node.filePath) : node.filePath;
+        if (destination === null) problem(node.id, link, "broken");
+        else {
+          const target = fileNodes.get(destination);
+          if (target) connect(node.id, target);
+        }
+      }
+    }
+  }
+  return { edges, unresolved };
+}
+
 function walk(nodes: MarkdownHeadingNode[], visit: (node: MarkdownHeadingNode) => void): void {
   for (const node of nodes) {
     visit(node);

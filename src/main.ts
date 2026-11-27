@@ -1,3 +1,4 @@
+import { folderFilePreview } from "./folder-preview";
 import "./structured-clone-fallback";
 import "./preact-scheduling";
 import {
@@ -19,6 +20,8 @@ import {
   TFolder,
   Setting,
   WorkspaceLeaf,
+  editorLivePreviewField,
+  getLanguage,
   type EventRef,
   type SettingDefinitionItem,
   type SettingDefinitionRender,
@@ -39,27 +42,38 @@ import {
   updateHeadingContent,
   type MarkdownHeadingNode,
 } from "./markdown-document";
+import { assignHeadingIds } from "./heading-ids";
 import {
+  BACKLINKS_EVENT,
   FOCUS_MODE_EVENT,
   createCanvasMount,
+  renderMountFailure,
   type BacklinkEntry,
   type CanvasHeading,
   type CanvasMount,
+  type CanvasProps,
   type PersistedCanvasLayout,
   type ResourceEntry,
 } from "./canvas";
 import { historyFocusId } from "./history-focus";
+import { livePreviewCommentsExtension } from "./live-preview-comments";
 import { conflictFileName, linkDrawingIntoNode, saveDrawing } from "./drawing-save";
 import { linkTargetsPath, parseInkSvg, retargetInkLinks, serializeInkSvg } from "./ink-document";
 import { appendSvgEmbed, ensureWikiLink, inkFileName } from "./ink-embeds";
+import { unresolvedImages } from "./vault-images";
 import { BLOOMMD_DOWNLOAD_URL, desktopNodeId, desktopOpenUrl, mobileOpenUrl } from "./open-app";
 import { desktopDeps, openNoteInDesktop } from "./desktop-handoff";
-import { MAP_INK_PROPERTY, createLinkedMapInk, mapInkLink, retargetLinkedNotes, withLinkedNote } from "./concept-map";
+import { MAP_INK_PROPERTY, createLinkedMapInk, mapInkLink, retargetLinkedNotes, withLinkedNote, type BacklinkResolver } from "./concept-map";
 import { migratePersistedPathState } from "./path-migration";
 import { LEARNING_FOLDER, emptyLearningFile, learningFilePath, learningKey, normalizeLearningSettings, rateEntry, type LearningFile, type LearningSettings } from "./learning";
 import { LearningStore } from "./learning-store";
+import { DEFAULT_TEMPLATE_FOLDER, noteNameProblem, planNoteFromTemplate, templateChoices } from "./template-note";
+import { OpmlError } from "./opml";
+import { planOpmlNote } from "./opml-note";
+import type { NoteTemplate } from "./note-templates";
 import { STUDY_ORDERS } from "./learning-panel";
 import { AgentHub, confirmAction } from "./agent-view";
+import { NavigatorView, VIEW_TYPE_NAVIGATOR, type NavigatorHost } from "./navigator-view";
 import type { ObsidianSharedDocumentEntry, ObsidianSharedDocumentSession } from "./shared-document";
 
 const VIEW_TYPE_BLOOMMD = "bloommd-mindmap-view";
@@ -94,6 +108,8 @@ interface BloomMDSettings {
   learning: LearningSettings;
   /** Recorded as reviewer when this person approves or rejects agent proposals. */
   agentReviewer: string;
+  /** Vault folder whose `.md` files are offered as templates by "New note from template". */
+  templateFolder: string;
 }
 
 interface BloomMDData {
@@ -199,6 +215,7 @@ const DEFAULT_SETTINGS: BloomMDSettings = {
   collaborationWorkspaceId: "",
   learning: normalizeLearningSettings(undefined),
   agentReviewer: "",
+  templateFolder: DEFAULT_TEMPLATE_FOLDER,
 };
 
 const EMPTY_LAYOUT: PersistedCanvasLayout = { positions: {}, collapsed: [] };
@@ -226,7 +243,7 @@ function canvasHeadings(nodes: MarkdownHeadingNode[]): CanvasHeading[] {
   return result;
 }
 
-function folderHeadings(folder: TFolder): CanvasHeading[] {
+function folderHeadings(folder: TFolder, previews: ReadonlyMap<string, CanvasHeading[]> = new Map(), loading: ReadonlySet<string> = new Set(), failed: ReadonlyMap<string, string> = new Map()): CanvasHeading[] {
   const result: CanvasHeading[] = [];
   const walk = (current: TFolder, parentId: string | null, level: number) => {
     const id = `folder:${current.path || "/"}`;
@@ -254,10 +271,13 @@ function folderHeadings(folder: TFolder): CanvasHeading[] {
           level: Math.min(level + 1, 6),
           title: child instanceof TFile ? child.basename : child.name,
           content: child.path,
-          children: [],
+          children: previews.get(child.path)?.filter((heading) => heading.parentId === `file:${child.path}`).map((heading) => heading.id) ?? [],
+          previewError: failed.get(child.path),
+          previewState: loading.has(child.path) ? "loading" : failed.has(child.path) ? "error" : previews.has(child.path) ? "loaded" : "unloaded",
           kind: "file",
           filePath: child.path,
         });
+        result.push(...(previews.get(child.path) ?? []));
       }
     });
   };
@@ -278,13 +298,27 @@ function filesInFolder(folder: TFolder | null): TFile[] {
   return result;
 }
 
-class BloomMDView extends ItemView {
+/** Exported for the view lifecycle tests; Obsidian only loads the default export. */
+export class BloomMDView extends ItemView {
   private sourceFile: TFile | null = null;
   private scopeFolder: TFolder | null = null;
+  private readonly folderPreviews = new Map<string, CanvasHeading[]>();
+  private readonly previewLoading = new Set<string>();
+  private readonly previewFailed = new Map<string, string>();
+  private previewRevision = 0;
+  private navigationRevision = 0;
+  private returnFolder: TFolder | null = null;
+  private returnSelection: string | null = null;
+  private initialSelection: string | null = null;
+  private initialEditor = false;
   private layoutKey = "";
   private headings: CanvasHeading[] = [];
   private rootId = "";
   private mount: CanvasMount | null = null;
+  /** Why the note could not be opened or loaded; the map shows it instead of staying empty. */
+  private failure: string | null = null;
+  /** The note whose loading failed, so Back to Markdown and Try again still know what to open. */
+  private failedPath: string | null = null;
   private writing = false;
   private lastKnownMarkdown = "";
   private undoStack: HistoryEntry[] = [];
@@ -314,19 +348,36 @@ class BloomMDView extends ItemView {
   }
 
   async onOpen() {
-    // The map drawing is linked from the frontmatter; re-render once Obsidian has indexed a new link.
-    this.registerEvent(this.app.metadataCache.on("changed", (file) => {
-      if (file.path === this.sourceFile?.path) this.renderCanvas();
-    }));
-    this.registerEvent(this.app.vault.on("modify", (file) => {
-      if (!(file instanceof TFile) || file.extension !== "svg" || file.path !== this.mapInkPath(this.sourceFile)) return;
-      this.mapInkRevision += 1;
-      this.renderCanvas();
-    }));
-    this.contentEl.empty();
-    this.contentEl.addClass("bloommd-view-host");
-    this.mount = createCanvasMount(this.contentEl);
-    this.renderCanvas();
+    // Whatever goes wrong here must not leave an empty pane: the view shows the error and a way back.
+    try {
+      // The map drawing is linked from the frontmatter; re-render once Obsidian has indexed a new link.
+      this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+        if (file.path === this.sourceFile?.path) this.renderCanvas();
+      }));
+      // Backlink edges follow the links of the whole vault (a folder map shows many notes).
+      this.registerEvent(this.app.metadataCache.on("resolved", () => {
+        if (this.layoutHasBacklinks()) this.renderCanvas();
+      }));
+      this.registerEvent(this.app.vault.on("modify", (file) => {
+        if (!(file instanceof TFile) || file.extension !== "svg" || file.path !== this.mapInkPath(this.sourceFile)) return;
+        this.mapInkRevision += 1;
+        this.renderCanvas();
+      }));
+      const refreshFolder = () => {
+        this.previewRevision += 1;
+        this.folderPreviews.clear(); this.previewFailed.clear();
+        if (!this.sourceFile && this.scopeFolder) this.setFolder(this.scopeFolder);
+      };
+      this.registerEvent(this.app.vault.on("create", refreshFolder));
+      this.registerEvent(this.app.vault.on("delete", refreshFolder));
+      this.registerEvent(this.app.vault.on("rename", refreshFolder));
+      this.contentEl.empty();
+      this.contentEl.addClass("bloommd-view-host");
+      this.mount = createCanvasMount(this.contentEl);
+      this.mount.render(this.canvasProps());
+    } catch (error) {
+      this.showFailure(error);
+    }
   }
 
   async onClose() {
@@ -334,7 +385,68 @@ class BloomMDView extends ItemView {
     this.mount = null;
   }
 
-  setNote(file: TFile, markdown: string) {
+  /**
+   * Shows why the map could not be opened or loaded, with Back to Markdown. Falls back to plain DOM
+   * when not even the React canvas can render the message.
+   */
+  showFailure(error: unknown, path?: string) {
+    console.error("BloomMD: the map could not be opened", error);
+    this.failure = error instanceof Error && error.message ? error.message : "Unknown error";
+    this.failedPath = path ?? this.failedPath;
+    if (this.mount) {
+      try {
+        this.mount.render(this.canvasProps());
+        return;
+      } catch (renderError) {
+        console.error("BloomMD: the error state could not be rendered", renderError);
+      }
+    }
+    try {
+      this.mount?.unmount();
+    } catch (unmountError) {
+      console.error("BloomMD: the broken canvas could not be unmounted", unmountError);
+    }
+    this.mount = null;
+    this.contentEl.addClass("bloommd-view-host");
+    renderMountFailure(this.contentEl, this.failure, this.backToMarkdown);
+  }
+
+  private clearFailure() {
+    this.failure = null;
+    this.failedPath = null;
+  }
+
+  /** Back to Markdown: the note of this map, else the note that failed to load, else any open note. */
+  private readonly backToMarkdown = () => {
+    const failed = this.failedPath ? this.app.vault.getAbstractFileByPath(this.failedPath) : null;
+    const file = this.sourceFile ?? (failed instanceof TFile ? failed : null);
+    void this.plugin.backToMarkdown(file, this.leaf).catch((error: unknown) => {
+      console.error("BloomMD: could not go back to Markdown", error);
+      new Notice("BloomMD: The Markdown note could not be opened.");
+    });
+  };
+
+  private readonly reloadNote = () => {
+    const path = this.sourceFile?.path ?? this.failedPath;
+    this.clearFailure();
+    if (path) void this.plugin.loadFileIntoView(path, this);
+    else this.renderCanvas();
+  };
+
+  setNote(file: TFile, markdown: string, preview?: CanvasHeading) {
+    const actual = preview ? canvasHeadings(parseHeadingTree(markdown)).find((heading) => heading.id === preview.sourceHeadingId) : undefined;
+    const matches = actual && preview && actual.title === preview.title && actual.content === preview.content;
+    this.initialSelection = matches ? actual.id : null;
+    this.initialEditor = Boolean(matches);
+    if (preview && !matches) new Notice(getLanguage().startsWith("de") ? "Der Abschnitt hat sich geändert. Bitte erneut auswählen." : "The section changed. Please select it again.");
+    try {
+      this.applyNote(file, markdown);
+    } catch (error) {
+      this.showFailure(error, file.path);
+    }
+  }
+
+  private applyNote(file: TFile, markdown: string) {
     if (this.sourceFile?.path !== file.path) {
       this.undoStack = [];
       this.redoStack = [];
@@ -354,8 +466,15 @@ class BloomMDView extends ItemView {
     const tree = parseHeadingTree(markdown);
     this.headings = canvasHeadings(tree);
     this.rootId = tree[0]?.id ?? "";
+    this.clearFailure();
     this.renderCanvas();
     void this.reloadLearning();
+  }
+
+  /** What the map shows: the note, or the folder in folder mode; null while it is empty. */
+  mapTarget(): { kind: "file" | "folder"; path: string } | null {
+    if (this.sourceFile) return { kind: "file", path: this.sourceFile.path };
+    return this.scopeFolder ? { kind: "folder", path: this.scopeFolder.path || "/" } : null;
   }
 
   /** The open note, when the view shows one (folders have no learning progress). */
@@ -420,26 +539,98 @@ class BloomMDView extends ItemView {
     this.sourceFile = null;
     this.scopeFolder = folder;
     this.layoutKey = `folder:${folder.path || "/"}`;
-    this.headings = folderHeadings(folder);
+    this.headings = folderHeadings(folder, this.folderPreviews, this.previewLoading, this.previewFailed);
     this.rootId = this.headings[0]?.id ?? "";
+    if (this.headings.length >= 200 && this.plugin.getLayout(this.layoutKey) === EMPTY_LAYOUT) {
+      this.plugin.saveLayout(this.layoutKey, { positions: {}, collapsed: this.headings.filter((heading) => heading.id !== this.rootId && heading.kind === "folder").map((heading) => heading.id) });
+    }
     this.undoStack = [];
     this.redoStack = [];
+    this.clearFailure();
     this.renderCanvas();
   }
 
-  async handleFileChange(file: TFile) {
-    if (this.writing || this.sourceFile?.path !== file.path) return;
-    const current = await this.app.vault.read(file);
-    const withIds = ensureHeadingIds(current);
-    let markdown = current;
-    if (withIds.changed) {
-      this.writing = true;
-      try {
-        markdown = await this.app.vault.process(file, (latest) => ensureHeadingIds(latest).markdown);
-      } finally {
-        this.writing = false;
-      }
+  private async loadFolderPreview(path: string): Promise<void> {
+    const folder = this.scopeFolder;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (this.sourceFile || !folder || !(file instanceof TFile) || file.extension !== "md"
+      || (folder.path && !path.startsWith(`${folder.path}/`)) || this.previewLoading.has(path)) return;
+    const revision = this.previewRevision;
+    this.previewLoading.add(path); this.previewFailed.delete(path);
+    this.setFolder(folder);
+    try {
+      const markdown = await this.app.vault.read(file);
+      if (revision !== this.previewRevision) return;
+      this.folderPreviews.set(path, folderFilePreview(path, file.basename, markdown));
+    } catch (error) {
+      console.error("BloomMD: folder preview failed", error);
+      const code = (error as { code?: string } | null)?.code;
+      const de = getLanguage().startsWith("de");
+      this.previewFailed.set(path, code === "EACCES" || code === "EPERM"
+        ? (de ? "Lesezugriff verweigert. Prüfe die Dateiberechtigungen." : "Read access denied. Check file permissions.")
+        : code === "ENOENT" ? (de ? "Die Datei wurde verschoben oder gelöscht." : "The note was moved or deleted.")
+        : (de ? "Die Datei konnte nicht gelesen oder verarbeitet werden. Prüfe, ob sie lokal verfügbar und in Obsidian lesbar ist." : "The note could not be read or processed. Check that it is available locally and readable in Obsidian."));
+    } finally {
+      this.previewLoading.delete(path);
+      if (!this.sourceFile && this.scopeFolder === folder) this.setFolder(folder);
     }
+  }
+
+  private createOverviewFile(folder: string): void {
+    new OverviewFileModal(this.app, folder, async (path, title) => {
+      try {
+        const file = await this.app.vault.create(path, `# ${title}\n`);
+        await this.openOverviewSource(file.path);
+      } catch (error) {
+        console.error("BloomMD: overview file creation failed", error);
+        throw error;
+      }
+    }).open();
+  }
+
+  private async openOverviewSource(path: string, sourceId?: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || file.extension !== "md") {
+      new Notice(getLanguage().startsWith("de") ? "Die Datei ist nicht mehr vorhanden." : "The file no longer exists."); return;
+    }
+    const revision = ++this.navigationRevision;
+    const folder = this.scopeFolder;
+    const preview = sourceId ? this.folderPreviews.get(path)?.find((heading) => heading.sourceHeadingId === sourceId) : undefined;
+    const opened = await this.plugin.loadFileIntoView(path, this, { preview, isCurrent: () => revision === this.navigationRevision, keepOnFailure: true });
+    if (opened) {
+      this.returnFolder = folder;
+      this.returnSelection = preview?.id ?? `file:${path}`;
+      this.renderCanvas();
+    }
+  }
+
+  private readonly backToOverview = async () => {
+    await this.mutationQueue;
+    const folder = this.returnFolder;
+    if (!folder) return;
+    const revision = ++this.navigationRevision;
+    const edited = this.sourceFile;
+    if (edited) {
+      try { this.folderPreviews.set(edited.path, folderFilePreview(edited.path, edited.basename, await this.app.vault.read(edited))); }
+      catch (error) { console.error("BloomMD: updated preview unavailable", error); this.folderPreviews.delete(edited.path); }
+    }
+    if (revision !== this.navigationRevision) return;
+    this.initialSelection = this.returnSelection;
+    this.initialEditor = false;
+    this.setFolder(folder);
+  };
+
+  async handleFileChange(file: TFile) {
+    const hadPreview = this.folderPreviews.delete(file.path);
+    this.previewRevision += 1;
+    if (!this.sourceFile && this.scopeFolder) {
+      this.setFolder(this.scopeFolder);
+      if (hadPreview) await this.loadFolderPreview(file.path);
+      return;
+    }
+    if (this.writing || this.sourceFile?.path !== file.path) return;
+    // Ids the note lacks are given in memory only; the file is written by the first edit.
+    const markdown = assignHeadingIds(await this.app.vault.read(file)).markdown;
     if (markdown === this.lastKnownMarkdown) return;
     this.lastKnownMarkdown = markdown;
     this.undoStack = [];
@@ -447,6 +638,7 @@ class BloomMDView extends ItemView {
     const tree = parseHeadingTree(markdown);
     this.headings = canvasHeadings(tree);
     this.rootId = tree[0]?.id ?? "";
+    this.clearFailure();
     this.renderCanvas();
   }
 
@@ -462,9 +654,12 @@ class BloomMDView extends ItemView {
       this.writing = true;
       try {
         let before = "";
-        const after = await this.app.vault.process(this.sourceFile, (current) => {
-          before = current;
-          return ensureHeadingIds(transform(current)).markdown;
+        let after = "";
+        await this.app.vault.process(this.sourceFile, (current) => {
+          // The map shows ids the file may not have yet; an edit starts from that view and writes them.
+          before = assignHeadingIds(current).markdown;
+          after = ensureHeadingIds(transform(before)).markdown;
+          return after === before ? current : after;
         });
         if (before !== after) {
           this.undoStack.push({ before, after });
@@ -511,7 +706,8 @@ class BloomMDView extends ItemView {
     });
   }
 
-  private updateFromMarkdown(markdown: string) {
+  private updateFromMarkdown(raw: string) {
+    const markdown = assignHeadingIds(raw).markdown;
     this.lastKnownMarkdown = markdown;
     const tree = parseHeadingTree(markdown);
     this.headings = canvasHeadings(tree);
@@ -602,7 +798,7 @@ class BloomMDView extends ItemView {
       return linked.markdown;
     };
     if (this.sourceFile?.path !== sourceFile.path) {
-      await this.app.vault.process(sourceFile, transform);
+      await this.app.vault.process(sourceFile, (markdown) => transform(assignHeadingIds(markdown).markdown));
       return found;
     }
     if (transform(this.lastKnownMarkdown) === this.lastKnownMarkdown) return found;
@@ -687,6 +883,25 @@ class BloomMDView extends ItemView {
     });
   }
 
+  /**
+   * Obsidian draws a broken icon for an image it cannot find. Names the path next to it, resolved by
+   * the rule the web and desktop apps share, so the same reference reads the same on every platform.
+   */
+  private showUnresolvedImages(element: HTMLElement, markdown: string, sourceFile: TFile | null): void {
+    if (!sourceFile) return;
+    const embeds = this.app.metadataCache.getFileCache(sourceFile)?.embeds ?? [];
+    const missing = unresolvedImages(
+      {
+        hasFile: (path) => this.app.vault.getAbstractFileByPath(path) instanceof TFile,
+        resolveLink: (link, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(link, sourcePath)?.path ?? null,
+      },
+      sourceFile.path,
+      markdown,
+      embeds.map((embed) => ({ link: embed.link, original: embed.original })),
+    );
+    for (const image of missing) element.createDiv({ cls: "bloommd-image-hint", text: `Image not found: ${image.path}` });
+  }
+
   private mapInkPath(sourceFile: TFile | null): string | null {
     if (!sourceFile) return null;
     const link = mapInkLink(this.app.metadataCache.getFileCache(sourceFile)?.frontmatter?.[MAP_INK_PROPERTY]);
@@ -728,6 +943,23 @@ class BloomMDView extends ItemView {
     }
   }
 
+  private layoutHasBacklinks(): boolean {
+    return Boolean(this.plugin.getLayout(this.layoutKey).backlinks);
+  }
+
+  /** Link resolution for the backlink edges mode (read-only; nothing here writes to a note). */
+  private linkResolver(): BacklinkResolver {
+    const cache = this.app.metadataCache;
+    return {
+      notePath: this.sourceFile?.path ?? null,
+      resolve: (linkpath, fromPath) => cache.getFirstLinkpathDest(linkpath, fromPath)?.path ?? null,
+      linksOf: (path) => {
+        const file = this.app.vault.getAbstractFileByPath(path);
+        return file instanceof TFile ? (cache.getFileCache(file)?.links ?? []).map((link) => link.link) : [];
+      },
+    };
+  }
+
   private backlinks(): BacklinkEntry[] {
     if (!this.sourceFile) return [];
     const result: BacklinkEntry[] = [];
@@ -741,14 +973,28 @@ class BloomMDView extends ItemView {
 
   private renderCanvas() {
     if (!this.mount) return;
+    try {
+      this.mount.render(this.canvasProps());
+    } catch (error) {
+      this.showFailure(error);
+    }
+  }
+
+  private canvasProps(): CanvasProps {
     const sourceFile = this.sourceFile;
     const editable = Boolean(sourceFile);
-    this.mount.render({
+    const layoutKey = this.layoutKey;
+    return {
+      locale: getLanguage(),
+      initialSelection: this.initialSelection,
+      initialEditor: this.initialEditor,
+      overview: !sourceFile && Boolean(this.scopeFolder),
       filePath: sourceFile?.path ?? this.layoutKey,
       headings: this.agentChanged.size ? this.headings.map((heading) => (this.agentChanged.has(heading.id) ? { ...heading, agentChanged: true } : heading)) : this.headings,
       rootId: this.rootId,
       files: this.plugin.markdownFiles(this.scopeFolder),
       backlinks: this.backlinks(),
+      linkResolver: this.linkResolver(),
       layout: this.plugin.getLayout(this.layoutKey),
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
@@ -762,6 +1008,7 @@ class BloomMDView extends ItemView {
         ? { settings: this.plugin.settings.learning, entries: this.learning.entries, examDate: this.learning.examDate ?? null, rate: this.rateNode, setExamDate: this.setExamDate }
         : null,
       resources: this.plugin.resourceFiles(this.scopeFolder),
+      loadError: this.failure,
       actions: {
         renameNode: (id, title, expectedTitle) => editable
           ? this.applyMutation((markdown) => {
@@ -817,8 +1064,13 @@ class BloomMDView extends ItemView {
         },
         undo: (selectedId) => this.restoreHistory("undo", selectedId),
         redo: (selectedId) => this.restoreHistory("redo", selectedId),
-        persistLayout: (layout) => this.plugin.saveLayout(this.layoutKey, layout),
-        openMarkdown: () => { if (sourceFile) void this.plugin.openMarkdownFile(sourceFile); },
+        persistLayout: (layout) => this.plugin.saveLayout(layoutKey, layout),
+        openMarkdown: this.backToMarkdown,
+        loadFolderPreview: (path) => this.loadFolderPreview(path),
+        openOverviewSource: (path, id) => { void this.openOverviewSource(path, id); },
+        backToOverview: sourceFile && this.returnFolder ? () => { void this.backToOverview(); } : undefined,
+        createOverviewFile: !sourceFile ? (folder) => { this.createOverviewFile(folder); } : undefined,
+        reloadNote: this.reloadNote,
         openBloomMD: (nodeId) => { if (sourceFile) void this.plugin.openFileInBloomMD(sourceFile, nodeId); },
         openWikiLink: (target) => { if (sourceFile) void this.app.workspace.openLinkText(target, sourceFile.path, false); },
         openExternalLink: (url) => window.open(url, "_blank", "noopener,noreferrer"),
@@ -840,6 +1092,7 @@ class BloomMDView extends ItemView {
         pickNote: () => pickNote(this.app, sourceFile?.path ?? ""),
         // Bound to this note: a drawing still saving after the view switched notes stays with its own note.
         saveMapInk: (path, svg, expectedSvg, conflictOf) => sourceFile ? this.saveMapInk(sourceFile, path, svg, expectedSvg, conflictOf) : Promise.resolve(null),
+        readNote: () => (sourceFile ? this.app.vault.cachedRead(sourceFile) : Promise.resolve(null)),
         saveExport: async (extension, data) => {
           if (!sourceFile) return null;
           try {
@@ -874,6 +1127,7 @@ class BloomMDView extends ItemView {
           component.load();
           element.empty();
           MarkdownRenderer.render(this.app, markdown, element, sourceFile?.path ?? "", component)
+            .then(() => this.showUnresolvedImages(element, markdown, sourceFile))
             .catch((error: unknown) => console.error("BloomMD could not render node content", error));
           return () => component.unload();
         },
@@ -898,7 +1152,7 @@ class BloomMDView extends ItemView {
           });
         },
       },
-    });
+    };
   }
 
   refreshSettings() {
@@ -909,9 +1163,13 @@ class BloomMDView extends ItemView {
   toggleFocusMode() {
     this.mount?.host.dispatchEvent(new CustomEvent(FOCUS_MODE_EVENT));
   }
+
+  toggleBacklinkEdges() {
+    this.mount?.host.dispatchEvent(new CustomEvent(BACKLINKS_EVENT));
+  }
 }
 
-export default class BloomMDPlugin extends Plugin {
+export default class BloomMDPlugin extends Plugin implements NavigatorHost {
   settings: BloomMDSettings = DEFAULT_SETTINGS;
   private layouts: Record<string, PersistedCanvasLayout> = {};
   private sharedDocumentBindings: ObsidianSharedDocumentEntry[] = [];
@@ -943,9 +1201,12 @@ export default class BloomMDPlugin extends Plugin {
     this.registerDomEvent(document, "visibilitychange", () => {
       if (document.visibilityState === "visible") this.bloomViews().forEach((view) => void view.reloadLearning());
     });
+    // Live Preview hides the bloommd:id / bloommd:meta comments behind headings; the file keeps them.
+    this.registerEditorExtension(livePreviewCommentsExtension((state) => state.field(editorLivePreviewField, false) ?? false));
     this.registerView(VIEW_TYPE_BLOOMMD, (leaf) => new BloomMDView(leaf, this));
     // Page Preview shows notes linked from handwriting on hover (mouse or Apple Pencil) without a modifier key.
     this.registerHoverLinkSource(VIEW_TYPE_BLOOMMD, { display: "BloomMD", defaultMod: false });
+    this.registerView(VIEW_TYPE_NAVIGATOR, (leaf) => new NavigatorView(leaf, this));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (file instanceof TFile && file.extension === "md") {
         void this.retargetInkLinks(file, oldPath);
@@ -973,8 +1234,35 @@ export default class BloomMDPlugin extends Plugin {
         return true;
       },
     });
+    this.addCommand({
+      id: "toggle-backlink-edges",
+      name: "Toggle backlink edges",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(BloomMDView) ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD)[0]?.view;
+        if (!(view instanceof BloomMDView)) return false;
+        if (!checking) view.toggleBacklinkEdges();
+        return true;
+      },
+    });
     this.addCommand({ id: "visualize-current-folder", name: "Visualize current folder", callback: () => void this.visualizeCurrentFolder() });
+    this.addRibbonIcon("folder-tree", "Open navigator", () => void this.openNavigator());
+    this.addCommand({ id: "open-navigator", name: "Open navigator", callback: () => void this.openNavigator() });
+    this.addCommand({
+      id: "reveal-active-file-in-navigator",
+      name: "Show active file in navigator",
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "R" }],
+      callback: () => void this.revealActiveFileInNavigator(),
+    });
+    this.addCommand({
+      id: "focus-navigator",
+      name: "Focus navigator",
+      callback: () => void this.openNavigator().then((view) => view.focusNavigator()),
+    });
+    this.addCommand({ id: "navigator-back", name: "Navigator: go back", checkCallback: (checking) => this.navigatorHistoryStep(-1, checking) });
+    this.addCommand({ id: "navigator-forward", name: "Navigator: go forward", checkCallback: (checking) => this.navigatorHistoryStep(1, checking) });
     this.addCommand({ id: "share-current-note", name: "Share current note with workspace", callback: () => void this.shareCurrentNote() });
+    this.addCommand({ id: "new-note-from-template", name: "New note from template", callback: () => void this.newNoteFromTemplate() });
+    this.addCommand({ id: "import-opml", name: "Import OPML", callback: () => this.importOpml() });
     this.addCommand({ id: "unshare-current-note", name: "Stop sharing current note with workspace", callback: () => void this.unshareCurrentNote() });
 
     this.registerEvent(this.app.vault.on("modify", (file) => {
@@ -1139,9 +1427,93 @@ export default class BloomMDPlugin extends Plugin {
       new Notice("BloomMD: Open a Markdown note first.");
       return;
     }
-    const view = await this.getOrCreateView();
-    await this.loadFileIntoView(file.path, view);
-    await this.app.workspace.revealLeaf(view.leaf);
+    await this.openMapView(async (view) => {
+      await this.loadFileIntoView(file.path, view);
+    });
+  }
+
+  /**
+   * Gets the map view, runs `show` on it and reveals it. A failure that no view can show (no view
+   * could be created) is logged and reported in a notice instead of vanishing in a rejected promise.
+   */
+  private async openMapView(show: (view: BloomMDView) => void | Promise<void>) {
+    try {
+      const view = await this.getOrCreateView();
+      await show(view);
+      await this.app.workspace.revealLeaf(view.leaf);
+    } catch (error) {
+      console.error("BloomMD: the map view could not be opened", error);
+      new Notice(`BloomMD: The map could not be opened${error instanceof Error && error.message ? `: ${error.message}` : "."}`);
+    }
+  }
+
+  /**
+   * Offers the built-in templates (in the Obsidian language) and the `.md` files of the template
+   * folder, asks for a name, and creates the note in the folder Obsidian uses for new notes next to
+   * the active file. A name with `/` goes into a sub-folder of that folder.
+   */
+  async newNoteFromTemplate() {
+    try {
+      const vault = this.app.vault;
+      const templates = await templateChoices(
+        { markdownPaths: () => vault.getMarkdownFiles().map((file) => file.path), read: (path) => this.readTemplateFile(path) },
+        this.settings.templateFolder,
+        getLanguage(),
+      );
+      const folder = this.app.fileManager.getNewFileParent(this.app.workspace.getActiveFile()?.path ?? "").path;
+      new NewFromTemplateModal(this.app, templates, folder, (template, name) => this.createNoteFromTemplate(folder, name, template)).open();
+    } catch (error) {
+      new Notice(`BloomMD: ${error instanceof Error ? error.message : "The templates could not be loaded."}`);
+    }
+  }
+
+  /** Asks for an OPML file (MindNode, Xmind, …) and turns it into a new note next to the active one. */
+  importOpml() {
+    const input = createEl("input", { type: "file" });
+    input.accept = ".opml,.xml,text/x-opml+xml,text/xml";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (file) void this.createNoteFromOpml(file);
+    });
+    input.click();
+  }
+
+  private async createNoteFromOpml(file: File): Promise<void> {
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error("The file is larger than 10 MB and was not imported.");
+      const folder = this.app.fileManager.getNewFileParent(this.app.workspace.getActiveFile()?.path ?? "").path;
+      const plan = planOpmlNote({
+        folder,
+        fileName: file.name,
+        xml: await file.text(),
+        exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
+      });
+      const created = await this.app.vault.create(plan.path, plan.content);
+      await this.app.workspace.getLeaf(false).openFile(created);
+      new Notice(`BloomMD: Imported ${file.name} as ${created.path}`);
+    } catch (error) {
+      console.error("BloomMD: OPML import failed", error);
+      new Notice(error instanceof OpmlError ? `BloomMD: The OPML file could not be imported. ${error.message}` : `BloomMD: ${error instanceof Error ? error.message : "The OPML file could not be imported."}`);
+    }
+  }
+
+  private async readTemplateFile(path: string): Promise<string> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) throw new Error(`The template ${path} was moved or deleted.`);
+    return this.app.vault.cachedRead(file);
+  }
+
+  private async createNoteFromTemplate(folder: string, name: string, template: NoteTemplate): Promise<void> {
+    const plan = planNoteFromTemplate({ folder, name, template });
+    if (this.app.vault.getAbstractFileByPath(plan.path)) throw new Error(`A note named ${plan.path} already exists.`);
+    // One level at a time: the mobile adapter does not create missing parents.
+    let current = "";
+    for (const segment of plan.folder.split("/").filter(Boolean)) {
+      current = current ? `${current}/${segment}` : segment;
+      if (!this.app.vault.getAbstractFileByPath(current)) await this.app.vault.createFolder(current);
+    }
+    const file = await this.app.vault.create(plan.path, plan.content);
+    await this.app.workspace.getLeaf(false).openFile(file);
   }
 
   async visualizeCurrentFolder() {
@@ -1150,20 +1522,117 @@ export default class BloomMDPlugin extends Plugin {
       new Notice("BloomMD: Open a Markdown note in the folder you want to visualize.");
       return;
     }
-    const view = await this.getOrCreateView();
-    view.setFolder(folder);
-    await this.app.workspace.revealLeaf(view.leaf);
+    await this.openMapView((view) => view.setFolder(folder));
   }
 
-  async loadFileIntoView(path: string, view: BloomMDView) {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile) || file.extension !== "md") return;
-    const markdown = await this.app.vault.process(file, (current) => ensureHeadingIds(current).markdown);
-    await this.connectSharedDocument(file).catch((error: unknown) => {
-      console.error("BloomMD: shared document connection could not be restored", error);
-      new Notice(`BloomMD collaboration is offline: ${error instanceof Error ? error.message : "connection unavailable"}`);
+  /** Opens the navigator in the left sidebar (or reveals it when it is already open). */
+  async openNavigator(): Promise<NavigatorView> {
+    const workspace = this.app.workspace;
+    let leaf = workspace.getLeavesOfType(VIEW_TYPE_NAVIGATOR)[0];
+    if (!leaf) {
+      leaf = workspace.getLeftLeaf(false) ?? workspace.getLeaf("split");
+      await leaf.setViewState({ type: VIEW_TYPE_NAVIGATOR, active: true });
+    }
+    await workspace.revealLeaf(leaf);
+    if (!(leaf.view instanceof NavigatorView)) throw new Error("Unable to load the BloomMD navigator.");
+    return leaf.view;
+  }
+
+  /** Shows the note of the active editor in the navigator and focuses it there. */
+  async revealActiveFileInNavigator() {
+    // The navigator itself may be the active view, so ask for the last active file, not the active editor.
+    const file = this.app.workspace.getActiveFile();
+    if (file?.extension !== "md") {
+      new Notice("BloomMD: Open a Markdown note first.");
+      return;
+    }
+    const view = await this.openNavigator();
+    view.revealActive(file, true);
+  }
+
+  private navigatorHistoryStep(direction: -1 | 1, checking: boolean): boolean {
+    const view = this.app.workspace.getActiveViewOfType(NavigatorView);
+    if (!view) return false;
+    if (!checking) view.navigate(direction);
+    return true;
+  }
+
+  // NavigatorHost
+  /** Opens a note from the navigator like Obsidian's file explorer: in the open note's tab, never over the map. */
+  async openNote(file: TFile) {
+    const workspace = this.app.workspace;
+    const open = workspace.getLeavesOfType("markdown").find((leaf) => leaf.view instanceof MarkdownView && leaf.view.file?.path === file.path);
+    if (open) {
+      await workspace.revealLeaf(open);
+      return;
+    }
+    const recent = workspace.getMostRecentLeaf(workspace.rootSplit);
+    const reusable = recent?.view instanceof MarkdownView && !recent.getViewState().pinned ? recent : null;
+    await (reusable ?? workspace.getLeaf("tab")).openFile(file);
+  }
+
+  async openMapFor(target: TFile | TFolder) {
+    // A new map opens beside the notes, never inside the sidebar the navigator lives in.
+    if (!this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD)[0]) {
+      const anchor = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
+      if (anchor) this.app.workspace.setActiveLeaf(anchor);
+    }
+    await this.openMapView(async (view) => {
+      if (target instanceof TFile) await this.loadFileIntoView(target.path, view);
+      else view.setFolder(target);
     });
-    view.setNote(file, markdown);
+  }
+
+  mapTarget() {
+    return this.bloomViews()[0]?.mapTarget() ?? null;
+  }
+
+  focusMapView(): boolean {
+    const view = this.bloomViews()[0];
+    if (!view) return false;
+    this.app.workspace.setActiveLeaf(view.leaf, { focus: true });
+    return true;
+  }
+
+  mapViewActive(): boolean {
+    return this.app.workspace.getActiveViewOfType(BloomMDView) !== null;
+  }
+
+  async loadFileIntoView(path: string, view: BloomMDView, options: { preview?: CanvasHeading; isCurrent?: () => boolean; keepOnFailure?: boolean } = {}): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || file.extension !== "md") return false;
+    try {
+      // Opening a map only reads: the ids the note lacks are given in memory and written by the first edit.
+      const markdown = assignHeadingIds(await this.app.vault.read(file)).markdown;
+      await this.connectSharedDocument(file).catch((error: unknown) => {
+        console.error("BloomMD: shared document connection could not be restored", error);
+        new Notice(`BloomMD collaboration is offline: ${error instanceof Error ? error.message : "connection unavailable"}`);
+      });
+      if (options.isCurrent && !options.isCurrent()) return false;
+      view.setNote(file, markdown, options.preview);
+      return true;
+    } catch (error) {
+      // The view shows the error and Back to Markdown instead of staying empty.
+      if (!options.isCurrent || options.isCurrent()) {
+        if (options.keepOnFailure) { console.error("BloomMD: could not open file", error); new Notice(getLanguage().startsWith("de") ? "Die Datei konnte nicht geöffnet werden." : "Could not open the file."); }
+        else view.showFailure(error, file.path);
+      }
+      return false;
+    }
+  }
+
+  /** Back to Markdown from the map: the given note, else the note last used, else the map closes. */
+  async backToMarkdown(file: TFile | null, mapLeaf: WorkspaceLeaf) {
+    const workspace = this.app.workspace;
+    const target = file ?? this.getActiveMarkdownFile();
+    if (target) return this.openMarkdownFile(target);
+    const recent = workspace.getMostRecentLeaf(workspace.rootSplit);
+    if (recent?.view instanceof MarkdownView) {
+      await workspace.revealLeaf(recent);
+      return;
+    }
+    // No Markdown note is open anywhere: closing the map is the only way out of an empty pane.
+    mapLeaf.detach();
   }
 
   async shareCurrentNote() {
@@ -1364,10 +1833,20 @@ export default class BloomMDPlugin extends Plugin {
 
   private async getOrCreateView(): Promise<BloomMDView> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_BLOOMMD)[0];
-    if (existing?.view instanceof BloomMDView) return existing.view;
+    if (existing) {
+      // A map restored with the workspace is a deferred view until it is first shown; it is no BloomMDView yet.
+      await existing.loadIfDeferred();
+      if (existing.view instanceof BloomMDView) return existing.view;
+    }
     const leaf = this.app.workspace.getLeaf("split", "vertical");
-    await leaf.setViewState({ type: VIEW_TYPE_BLOOMMD, active: true });
-    if (!(leaf.view instanceof BloomMDView)) throw new Error("Unable to load BloomMD view.");
+    try {
+      await leaf.setViewState({ type: VIEW_TYPE_BLOOMMD, active: true });
+      if (!(leaf.view instanceof BloomMDView)) throw new Error("Unable to load BloomMD view.");
+    } catch (error) {
+      // Do not leave an empty pane behind.
+      leaf.detach();
+      throw error;
+    }
     return leaf.view;
   }
 
@@ -1510,6 +1989,11 @@ class BloomMDSettingTab extends PluginSettingTab {
           name: "Show content previews",
           desc: "Show a short local Markdown preview inside each mind-map node.",
           control: { type: "toggle", key: "showNodeContent", defaultValue: true },
+        },
+        {
+          name: "Template folder",
+          desc: "Vault folder whose Markdown files appear as your own templates in “New note from template”. Sub-folders are not searched. {{title}} and {{date}} are filled in.",
+          control: { type: "text", key: "templateFolder", defaultValue: DEFAULT_TEMPLATE_FOLDER, placeholder: DEFAULT_TEMPLATE_FOLDER },
         },
         {
           name: "Collaboration server",
@@ -1660,6 +2144,84 @@ class BloomMDSettingTab extends PluginSettingTab {
       }
     }
     return this.plugin.saveSettings();
+  }
+}
+
+/** Picks a template and a name for a new note. `onCreate` rejects with a message to show. */
+class OverviewFileModal extends Modal {
+  constructor(app: App, private readonly folder: string, private readonly create: (path: string, title: string) => Promise<void>) { super(app); }
+  onOpen() {
+    const de = getLanguage().startsWith("de");
+    this.titleEl.setText(de ? "Neue Datei" : "New file");
+    let name = "";
+    const status = this.contentEl.createEl("p", { attr: { role: "alert" } });
+    new Setting(this.contentEl).setName(de ? "Dateiname" : "File name").setDesc(this.folder || "/").addText((input) => {
+      input.onChange((value) => { name = value.trim().replace(/\.md$/i, ""); });
+      input.inputEl.focus();
+    });
+    new Setting(this.contentEl).addButton((button) => button.setButtonText(de ? "Anlegen" : "Create").setCta().onClick(async () => {
+      if (!name || name === "." || name === ".." || /[\/\\\x00-\x1f:#]/.test(name)) { status.setText(de ? "Bitte einen gültigen Dateinamen eingeben." : "Enter a valid file name."); return; }
+      button.setDisabled(true);
+      try { await this.create(`${this.folder ? `${this.folder}/` : ""}${name}.md`, name); this.close(); }
+      catch { status.setText(de ? "Die Datei konnte nicht angelegt werden. Ist der Name schon vergeben?" : "Could not create the file. Is the name already in use?"); button.setDisabled(false); }
+    }));
+  }
+  onClose() { this.contentEl.empty(); }
+}
+
+class NewFromTemplateModal extends Modal {
+  constructor(
+    app: App,
+    private readonly templates: NoteTemplate[],
+    private readonly folder: string,
+    private readonly onCreate: (template: NoteTemplate, name: string) => Promise<void>,
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "New note from template" });
+    let template = this.templates[0]!;
+    let name = "";
+    const where = this.folder.replace(/^\/+|\/+$/g, "") || "vault root";
+    const problem = contentEl.createEl("p", { cls: "mod-warning" });
+    const submit = async () => {
+      const invalid = noteNameProblem(name);
+      if (invalid) {
+        problem.setText(invalid);
+        return;
+      }
+      try {
+        await this.onCreate(template, name);
+        this.close();
+      } catch (error) {
+        problem.setText(error instanceof Error ? error.message : "The note could not be created.");
+      }
+    };
+    new Setting(contentEl)
+      .setName("Template")
+      .addDropdown((dropdown) => {
+        this.templates.forEach((entry) => dropdown.addOption(entry.id, entry.title));
+        dropdown.setValue(template.id).onChange((id) => { template = this.templates.find((entry) => entry.id === id) ?? template; });
+      });
+    new Setting(contentEl)
+      .setName("Name")
+      .setDesc(`Created in ${where}. Use / to put the note in a sub-folder.`)
+      .addText((text) => {
+        text.setPlaceholder("Note name").onChange((value) => { name = value; });
+        text.inputEl.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") { event.preventDefault(); void submit(); }
+        });
+        window.setTimeout(() => text.inputEl.focus(), 0);
+      });
+    new Setting(contentEl)
+      .addButton((button) => button.setButtonText("Create").setCta().onClick(() => void submit()))
+      .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()));
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 

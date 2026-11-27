@@ -79,13 +79,14 @@ not part of the development workflow and is detected by the next mirror check.
 
 1. Update `manifest.json`, `package.json`, `versions.json`, and `CHANGELOG.md` to the same version in the monorepo.
 2. Run the monorepo Core/plugin tests and typechecks from the committed source.
-3. Run the mirror sync and review the generated public diff.
-4. Run `bun install --frozen-lockfile`, `bun run typecheck`, `bun run test`, and `bun run release:package` in the public checkout.
-5. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
-6. Push the dedicated repository and create an exact version tag such as `0.5.0`.
-7. Verify the GitHub release contains `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css`, and verify `icon.png` remains at the repository root.
-8. Verify `package.json` and the release snapshot identify the MIT license.
-9. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
+3. Run `bun run docs:verify` in the monorepo. Correct every reported deviation in `docs/ARCHITECTURE.md` (or record it as explicitly versioned in `scripts/check-architecture-docs.ts`), then renew its `Verified against:` line with date, version and Git SHA.
+4. Run the mirror sync and review the generated public diff.
+5. Run `bun install --frozen-lockfile`, `bun run typecheck`, `bun run test`, and `bun run release:package` in the public checkout.
+6. Run the clean-vault smoke test and test the generated files from `release/<version>/` in a desktop Obsidian installation.
+7. Push the dedicated repository and create an exact version tag such as `0.5.0`.
+8. Verify the GitHub release contains `manifest.json`, `main.js`, `shared-runtime.js`, and `styles.css`, and verify `icon.png` remains at the repository root.
+9. Verify `package.json` and the release snapshot identify the MIT license.
+10. After beta sign-off, submit the public repository through the official `obsidian-releases` process.
 
 ## 0.5.0 public beta evidence
 

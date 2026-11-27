@@ -1,16 +1,16 @@
 {
   "name": "bloommd-obsidian",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "license": "MIT",
   "private": true,
   "description": "BloomMD companion plugin for Obsidian",
   "main": "main.js",
   "scripts": {
-    "build": "esbuild src/main.ts src/shared-runtime.ts src/styles.css --bundle --minify --external:obsidian --external:./shared-runtime --alias:react=preact/compat --alias:react-dom=preact/compat --format=cjs --target=es2018 --outdir=. --entry-names=[name]",
+    "build": "esbuild src/main.ts src/shared-runtime.ts src/styles.css --bundle --minify --external:obsidian --external:@codemirror/state --external:@codemirror/view --external:./shared-runtime --alias:react=preact/compat --alias:react-dom=preact/compat --format=cjs --target=es2018 --outdir=. --entry-names=[name]",
     "release:verify": "node scripts/release.mjs --verify",
     "release:package": "bun run build && node scripts/release.mjs --package",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --preload ./scripts/test-dom.ts --preload ./scripts/test-preact.ts src/markdown-document.test.ts src/canvas.test.ts src/history-focus.test.ts src/path-migration.test.ts src/shared-document.test.ts src/ink-embeds.test.ts src/concept-map.test.ts src/map-export.test.ts src/open-app.test.ts src/desktop-handoff.test.ts src/map-touch-capture.test.ts src/ink-panel.test.ts src/drawing-save.test.ts src/map-ink-bar.test.ts src/bundle-size.test.ts src/agent-vault.test.ts src/learning-panel.test.ts src/learning-store.test.ts src/structured-clone-fallback.test.ts"
+    "test": "bun test --preload ./scripts/test-dom.ts --preload ./scripts/test-preact.ts src/markdown-document.test.ts src/canvas.test.ts src/history-focus.test.ts src/navigator-model.test.ts src/navigator-history.test.ts src/navigator-focus.test.ts src/navigator-help.test.ts src/heading-ids.test.ts src/folder-preview.test.ts src/path-migration.test.ts src/shared-document.test.ts src/ink-embeds.test.ts src/concept-map.test.ts src/map-export.test.ts src/opml-note.test.ts src/open-app.test.ts src/desktop-handoff.test.ts src/map-touch-capture.test.ts src/ink-panel.test.ts src/drawing-save.test.ts src/map-ink-bar.test.ts src/bundle-size.test.ts src/agent-vault.test.ts src/learning-panel.test.ts src/learning-store.test.ts src/template-note.test.ts src/structured-clone-fallback.test.ts src/live-preview-comments.test.ts src/vault-images.test.ts src/canvas-runtime.test.ts src/canvas-backlinks.test.ts && bun test --preload ./scripts/test-dom.ts --preload ./scripts/test-preact.ts src/navigator-view.test.ts && bun test --preload ./scripts/test-dom.ts --preload ./scripts/test-preact.ts src/view-lifecycle.test.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",
@@ -23,6 +23,8 @@
     "yjs": "^13.6.32"
   },
   "devDependencies": {
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.38.6",
     "@types/node": "^26.2.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

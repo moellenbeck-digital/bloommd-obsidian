@@ -1,6 +1,18 @@
+@import "./workspace-nodes.css";
 @import "./ink.css";
 
 @import "@xyflow/react/dist/style.css";
+
+/* Names the path of an image that could not be found, next to Obsidian's broken image icon. */
+.bloommd-image-hint {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border: 1px dashed var(--text-warning);
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  overflow-wrap: anywhere;
+}
 
 .bloommd-view-host {
   height: 100%;
@@ -276,18 +288,18 @@
   transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
-.bloommd-flow-node:hover,
-.bloommd-flow-node.is-selected {
+.bloommd-flow-node:not(.bloommd-workspace-node):hover,
+.bloommd-flow-node:not(.bloommd-workspace-node).is-selected {
   border-color: #ff6b35;
   box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.16), 0 12px 30px rgba(0, 0, 0, 0.2);
 }
 
-.bloommd-flow-node.bloommd-level-1 {
+.bloommd-flow-node:not(.bloommd-workspace-node).bloommd-level-1 {
   border-color: #ff6b35;
   background: color-mix(in srgb, #ff6b35 12%, var(--background-primary));
 }
 
-.bloommd-flow-node.bloommd-level-2 {
+.bloommd-flow-node:not(.bloommd-workspace-node).bloommd-level-2 {
   border-color: color-mix(in srgb, #ff6b35 50%, var(--background-modifier-border));
 }
 
@@ -460,7 +472,7 @@
   stroke: var(--background-modifier-border-hover);
 }
 
-.react-flow__node.selected .bloommd-flow-node {
+.react-flow__node.selected .bloommd-flow-node:not(.bloommd-workspace-node) {
   border-color: #ff6b35;
 }
 
@@ -786,6 +798,39 @@
 .bloommd-empty-state h3,
 .bloommd-empty-state p {
   margin: 0;
+}
+
+/* Error state of a map that could not be opened or rendered; always carries Back to Markdown. */
+.bloommd-render-error {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.bloommd-render-error h3,
+.bloommd-render-error p {
+  margin: 0;
+}
+
+.bloommd-render-error code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.bloommd-render-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .bloommd-mode-heading {
@@ -1157,16 +1202,20 @@
   }
 }
 
+@container (max-width: 820px) {
+  .react-flow__minimap {
+    display: none;
+  }
+}
+
 @container (max-width: 520px) {
   .bloommd-file-picker {
     flex: 1;
     min-width: 0;
   }
+}
 
-  .react-flow__minimap {
-    display: none;
-  }
-}.bloommd-inspector.is-fullscreen .bloommd-ink-editor {
+.bloommd-inspector.is-fullscreen .bloommd-ink-editor {
   min-height: min(70vh, 900px);
 }
 
@@ -1387,6 +1436,32 @@
   stroke: #2563eb;
   stroke-width: 2;
   stroke-dasharray: 6 5;
+}
+
+/* Backlink mode: dotted and grey with an arrowhead, so it differs from hierarchy (solid) and relations (blue dashes). */
+.react-flow__edge-path.bloommd-backlink-edge,
+.bloommd-backlink-edge {
+  stroke: var(--text-faint, #8b8b8b);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.react-flow__edge[data-id^="backlink:"] {
+  pointer-events: none;
+}
+
+.bloommd-backlink-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--text-warning, #b45309);
+  background: color-mix(in srgb, var(--text-warning, #b45309) 14%, var(--background-primary));
+  font-size: 10px;
 }
 
 .bloommd-relation-label {
@@ -2159,4 +2234,223 @@ button.bloommd-agent-path {
   border: 2px solid var(--background-primary);
   border-radius: 50%;
   background: var(--color-purple);
+}
+
+/* Navigator view: folder tree and note list. */
+.bloommd-nav {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.bloommd-nav-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.bloommd-nav-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.bloommd-nav-spacer {
+  flex: 1;
+}
+
+.bloommd-nav-button:disabled {
+  opacity: 0.4;
+}
+
+.bloommd-nav-search {
+  width: 100%;
+}
+
+.bloommd-nav-context {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-ui-smaller);
+}
+
+.bloommd-nav-context > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 6px;
+  border-left: 3px solid transparent;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bloommd-nav-context-browse {
+  border-left-color: var(--text-muted);
+  color: var(--text-normal);
+}
+
+.bloommd-nav-context-map {
+  border-left-color: var(--interactive-accent);
+  color: var(--text-muted);
+}
+
+.bloommd-nav-context-map:not([data-kind="none"]) {
+  color: var(--text-accent);
+}
+
+.bloommd-nav-context-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.bloommd-nav-help {
+  max-height: 40%;
+  padding: 8px;
+  overflow: auto;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-smaller);
+}
+
+.bloommd-nav-help.is-hidden {
+  display: none;
+}
+
+.bloommd-nav-help td {
+  padding: 2px 6px 2px 0;
+  vertical-align: top;
+}
+
+.bloommd-nav-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bloommd-nav-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bloommd-nav-pane + .bloommd-nav-pane {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.bloommd-nav-pane-title {
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bloommd-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.bloommd-nav-scroll:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.bloommd-nav-sizer {
+  position: relative;
+  height: var(--bloommd-nav-height, 0);
+}
+
+.bloommd-nav-row {
+  position: absolute;
+  top: var(--bloommd-nav-top, 0);
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--bloommd-nav-row-height, 28px);
+  padding-inline-start: calc(var(--bloommd-nav-depth, 0) * 14px + 6px);
+  padding-inline-end: 8px;
+  cursor: pointer;
+}
+
+.is-mobile .bloommd-nav-row {
+  --bloommd-nav-row-height: 40px;
+}
+
+.bloommd-nav-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.bloommd-nav-row.is-selected {
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+}
+
+.bloommd-nav-scroll:focus .bloommd-nav-row.is-selected,
+.bloommd-nav-scroll:focus-within .bloommd-nav-row.is-selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.bloommd-nav-chevron {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.bloommd-nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep Obsidian theme ownership at the host boundary. */
+.bloommd-workspace-node .bloommd-node-meta:empty { display: none; }
+.bloommd-react-shell {
+  --bloommd-workspace-text: var(--text-normal);
+  --bloommd-workspace-muted: var(--text-muted);
+  --bloommd-workspace-surface: var(--background-primary);
+  --bloommd-workspace-folder: var(--background-secondary);
+  --bloommd-workspace-border: var(--background-modifier-border-hover);
+  --bloommd-workspace-font: var(--font-interface);
+}
+
+.bloommd-overview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-bottom: 1px solid var(--background-modifier-border); }
+.bloommd-overview-bar span { color: var(--text-muted); font-size: 12px; }
+.bloommd-overview-bar button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.bloommd-workspace-node .bloommd-node-actions { top: calc(100% + 8px); left: 50%; transform: translateX(-50%); flex-direction: row; width: max-content; }
+.bloommd-workspace-node .bloommd-node-actions button { width: auto; min-height: 44px; padding: 4px 10px; gap: 6px; white-space: nowrap; }
+.is-mobile .bloommd-workspace-node .bloommd-node-actions { display: flex; }
+.bloommd-node-actions button.bloommd-workspace-touch-open { display: none; }
+@media (pointer: coarse) {
+  .bloommd-node-actions button.bloommd-workspace-touch-open { display: inline-flex; }
+  .bloommd-workspace-node .bloommd-node-actions { scale: calc(1 / var(--bloommd-canvas-zoom, 1)); transform-origin: top center; }
+  .bloommd-workspace-node .bloommd-node-meta-button { min-height: 44px; min-width: 44px; }
+}
+
+/* Search and recoverable preview failures remain available in narrow/touch panes. */
+.bloommd-search-toggle { display: none; }
+.bloommd-search-results small { display: block; opacity: .65; overflow-wrap: anywhere; }
+.bloommd-preview-errors { display: flex; gap: 8px; align-items: start; padding: 6px 10px; border-bottom: 1px solid var(--background-modifier-border); }
+.bloommd-preview-errors details { flex: 1; max-height: 180px; overflow: auto; }
+.bloommd-preview-errors button, .bloommd-preview-errors summary { min-height: 44px; }
+@container (max-width: 820px) {
+  .bloommd-search-toggle { display: inline-flex; }
+  .bloommd-search.is-open { display: flex; position: absolute; left: 8px; right: 8px; top: 48px; width: auto; max-width: none; z-index: 60; background: var(--background-primary); }
+  .bloommd-search.is-open input { min-width: 0; flex: 1; min-height: 44px; }
+  .bloommd-search-results button { min-height: 44px; }
 }

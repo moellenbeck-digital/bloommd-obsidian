@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.8.0
+
+### Navigation / Navigation
+
+- Die Suche findet geladene Knoten über Titel und Dateipfad, klappt Vorfahren auf und zentriert den Treffer. Sie bleibt auch in schmalen Touch-Ansichten erreichbar. Große Ordnerübersichten starten eingeklappt.
+- Fehler einer Inhaltsvorschau lassen den Dateiknoten sichtbar; Ladehinweise können ausgeblendet und die Vorschau erneut geladen werden. Noch nicht geladene Inhalte werden nicht durchsucht.
+- Search finds loaded nodes by title and file path, expands ancestors and centers the result, including narrow touch panes. Large folder overviews start collapsed.
+- Failed content previews retain their file node with dismissible guidance and retry. Contents that have not been loaded are not searched.
+
+
+### Map
+
+- New optional **Backlink edges** mode (header button and command **Toggle backlink edges**, off by default, saved per map or folder): a dashed arrow runs from a node to every node it links to (`[[#Heading]]`, `[[Note#Heading]]`, a BloomMD node id as the fragment; in folder maps from file to file). It is display only and never writes to the note. Broken or ambiguous links are not guessed: the node shows a warning badge with the link and the reason. Image and map exports are unchanged.
+
+### Fixes
+
+- The map view no longer stays blank after **Visualize current note**: the map is fitted once the view has a size (a freshly split or hidden pane is not laid out yet), and a map restored with the workspace is reused instead of opening a second one.
+- If opening, loading or rendering a map fails, the view shows what went wrong with **Back to Markdown** (and **Try again**) instead of an empty pane. An empty view and a note without headings now offer **Back to Markdown** too, and the button also works in folder mode.
+- Renaming a node (or typing the title of a new node) no longer loses the first characters when typing starts right after the double click: the title field re-selected its text 50 ms after opening, so the next character replaced what had just been typed. It now only does that while nothing has been typed yet.
+
+### Live Preview
+
+- The `<!-- bloommd:id=… -->` and `<!-- bloommd:meta=… -->` comments BloomMD writes behind headings are now hidden in Live Preview, so notes no longer look cluttered. The file is not changed: the comments stay exactly as they are, and Source mode still shows them. Other HTML comments in your notes stay visible. The cursor skips the hidden part, and typing or deleting at the end of a heading never removes the comment.
+
+### Templates
+
+- New command **New note from template**: pick one of five built-in templates (Lecture, Cornell, Literature note, Exam prep, Project; German when Obsidian is set to German, English otherwise) or one of your own, enter a name, and the note is created in the folder Obsidian uses for new notes next to the active file (a name with `/` goes into a sub-folder) and opened. Only `{{title}}` and `{{date}}` (`YYYY-MM-DD`) are replaced; other `{{…}}` stay as written.
+- Your own templates are the Markdown files directly inside the vault folder **Template folder** (Settings, default `Vorlagen`); sub-folders are not searched, and without the folder only the built-in templates appear.
+
+### Navigator
+
+- New **BloomMD navigator** side view (ribbon icon, command **Open navigator**): the vault as a folder tree with open/close folders and the Markdown notes of the selected folder in a separate list. Click or `Enter` opens a note; the map is one step away (**Map of the selected note / folder**, or `M`) and is never loaded for the whole vault.
+- **Show active file in navigator** (`Cmd/Ctrl+Shift+R`) opens the folders on the way, scrolls to the note, selects and focuses it. The navigator also follows the active note while you work.
+- Keyboard model with explicit focus areas (tree, list, map): `↑`/`↓`, `←`/`→`, `Enter`, `Tab`, `Esc`; back and forward through the navigation history with `Cmd/Ctrl+[` and `Cmd/Ctrl+]` or the buttons in the header. The header shows where you are browsing and which map is open as two separate lines; a built-in help lists all shortcuts. New command **Focus navigator** brings focus back from the map.
+- Folder tree and note list only render the rows in view, so large vaults stay responsive.
+- `Esc` in the map now returns focus to the list or tree the map was opened from (with `M` or the header buttons), as the help says, instead of landing in the editor. The existing `Esc` chain list → tree → editor is unchanged.
+- At the end of the navigation history the focus no longer falls onto the page: when **Back** or **Forward** (click, `Cmd/Ctrl+[` or `Cmd/Ctrl+]`) reaches the end and the button is disabled, focus moves to the other button if it is usable, otherwise to the list or tree.
+- Opening a map of a note (`M` or **Open map of the selected note**, **Visualize current note**) no longer writes to the note. The `<!-- bloommd:id=… -->` comments are written with the first edit made in the map; until then the map shows the same ids it will write, so layout, learning progress and undo behave as before. Notes shared with a workspace still get them when sharing starts.
+
 ## 0.7.1
 
 Code quality fixes from the Obsidian community plugin review; no change in behaviour.

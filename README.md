@@ -39,7 +39,7 @@ The wider BloomMD product is evolving as a local-first Markdown workspace: brows
 Read this before using the plugin in an important vault.
 
 - BloomMD writes to the note you are viewing. Try it on a copy first if the vault is sensitive.
-- BloomMD adds one HTML comment per heading, for example `## Goal <!-- bloommd:id=a1b2c3 -->`. These comments give nodes stable IDs and are invisible in Obsidian preview.
+- BloomMD adds one HTML comment per heading, for example `## Goal <!-- bloommd:id=a1b2c3 -->`. These comments give nodes stable IDs and are invisible in Obsidian preview. Opening a map (or the navigator) only reads the note: the comments are written with your first edit in the map (or when you share the note), and until then the map uses the same IDs it will write.
 - Deleting a BloomMD ID does not break the note. BloomMD will generate a new one when needed.
 - Frontmatter, code blocks, HTML blocks, unrelated sections, and text outside headings are preserved.
 - Headings inside fenced code, indented code, and HTML blocks are ignored.
@@ -113,11 +113,57 @@ BRAT keeps the plugin updated as beta releases are tagged.
 
 - `BloomMD: Visualize current note` - also available from the ribbon.
 - `BloomMD: Visualize current folder`.
+- `BloomMD: Open navigator` - the vault navigator (see [Navigator](#navigator)); also available from the ribbon.
+- `BloomMD: Show active file in navigator` - `Cmd/Ctrl+Shift+R` by default.
+- `BloomMD: Focus navigator` - returns focus to the navigator, for example from the map.
+- `BloomMD: Navigator: go back` / `go forward` - in the navigator's history (also `Cmd/Ctrl+[` and `Cmd/Ctrl+]` while it has focus).
 - `BloomMD: Open current note in BloomMD` - opens the note in BloomMD Desktop at the selected node (also the **Open app** toolbar button). A running app takes the note on every platform; macOS and Linux (installed package) also start the app when needed, on Windows start BloomMD Desktop first.
 - `BloomMD: Share current note with BloomMD workspace`.
 - `BloomMD: Stop sharing current note with BloomMD workspace`.
 - `BloomMD: Open agent panel` - also available from the ribbon.
 - `BloomMD: Ask agent about current note`.
+
+## Navigator
+
+The navigator is a side view that shows your vault as a **folder tree** and the **Markdown notes of the selected folder** as a list. It leads to the map; it does not replace it. The vault is only read, and no map is loaded until you ask for one: the map stays limited to the note or folder you choose.
+
+- **Tree**: folders, open and close them. Selecting a folder shows its notes in the list below.
+- **List**: the notes of the selected folder. Click or `Enter` opens a note in Obsidian.
+- **Active note**: the navigator follows the note you are editing. `Cmd/Ctrl+Shift+R` (command **Show active file in navigator**) opens the folders on the way, scrolls to the note, selects it and focuses the list.
+- **Map**: **Map of the selected note** and **Map of the selected folder** in the header (or `M`) open the existing BloomMD map. The vault root itself is not mapped, because that would put the whole vault on one canvas; select a folder. The header shows two lines so you can tell them apart: *Browsing* (folder and note you are looking at) and *Map* (what the map shows).
+- **History**: the arrow buttons, `Cmd/Ctrl+[` and `Cmd/Ctrl+]` go back and forward through the folders and notes you visited.
+- **Help**: the **?** button in the header shows the shortcuts below.
+
+### Focus model
+
+The navigator keeps track of which area has focus instead of guessing from the page:
+
+| Area | What it is |
+|---|---|
+| Tree | The vault's folders. |
+| List | The Markdown notes of the selected folder. |
+| Map | The BloomMD map. `Tab` and **Map of ...** move focus there; `Esc` or **Focus navigator** returns to the list or tree you came from. |
+| Search | Reserved for the vault search; not available yet. |
+
+### Shortcuts
+
+`Cmd` on macOS, `Ctrl` on Windows and Linux.
+
+| Keys | Where | Action |
+|---|---|---|
+| `↑` / `↓` | Tree, list | Previous / next entry |
+| `←` | Tree | Close the folder, or go to the parent folder |
+| `→` | Tree | Open the folder, or focus the list |
+| `←` | List | Back to the tree |
+| `Enter` | Tree | Open the folder and focus its notes |
+| `Enter` | List | Open the note (the list keeps focus, so you can keep browsing) |
+| `M` | Tree, list | Open the map of the selected note or folder |
+| `Tab` / `Shift+Tab` | Navigator | Next / previous area (tree, list, map) |
+| `Esc` | Navigator | List → tree → editor; from the map back to where you came from |
+| `Cmd/Ctrl+[` / `Cmd/Ctrl+]` | Navigator | Back / forward in the navigation history |
+| `Cmd/Ctrl+Shift+R` | Anywhere | Show the active note in the navigator |
+
+Clicking a note opens it and gives focus to the editor.
 
 ## Editing
 

@@ -1,7 +1,7 @@
 /**
  * GENERATED FILE — DO NOT EDIT.
  * Snapshot of packages/core/src/agent-ledger.ts by the BloomMD mirror sync.
- * Source SHA-256: 4c0df04e56db1e93d0c2ff8e3c2c603748b820992dcf4c373a38708d077deaff
+ * Source SHA-256: 94c774f749b270270fb10d4850a52a288f82e44e87611dd5a510b2718193aebb
  */
 /**
  * The agent's state next to a knowledge target (`.bloommd/` in a vault): rights (`agent.json`),
@@ -20,7 +20,7 @@ export type AgentTarget = "vault" | "cloud";
 export interface AgentAccessConfig {
   /** Access in areas without their own rule. */
   access: AgentAccess;
-  /** Per area (top-level folder or cloud prefix), e.g. { "Arbeit": "propose" }. */
+  /** Per area (a folder path such as "Arbeit" or "Learnings/dev-team"), e.g. { "Arbeit": "propose" }. */
   areas?: Record<string, AgentAccess>;
 }
 
@@ -128,6 +128,45 @@ export function vaultArea(path: string): string {
   return path.includes("/") ? path.split("/")[0]! : "";
 }
 
+/** The whole folder of a vault path ("Learnings/dev-team" for "Learnings/dev-team/Idee.md"; "" at the top level). */
+export function vaultAreaPath(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index < 0 ? "" : path.slice(0, index);
+}
+
+/** Between the sub-areas of an area in a cloud file name ("Learnings › dev-team – Idee.md"); "/" cannot appear in a file name. */
+export const CLOUD_AREA_SEPARATOR = " › ";
+const CLOUD_TITLE_SEPARATOR = " – ";
+
+/** The area of a cloud map from its file name: "Learnings › dev-team – Idee.md" is "Learnings/dev-team". */
+export function cloudAreaOf(filename: string): string {
+  const prefix = filename.indexOf(CLOUD_TITLE_SEPARATOR) > 0 ? filename.slice(0, filename.indexOf(CLOUD_TITLE_SEPARATOR)) : "";
+  return prefix.split(CLOUD_AREA_SEPARATOR).map((segment) => segment.trim()).filter(Boolean).join("/");
+}
+
+/** The parts of an area path ("Learnings/dev-team"), without empty parts. */
+export function areaSegments(area: string): string[] {
+  return area.split("/").map((segment) => segment.trim()).filter(Boolean);
+}
+
+/** An area path in its stored spelling: trimmed parts joined by "/". */
+export function normalizeAreaPath(area: string): string {
+  return areaSegments(area).join("/");
+}
+
+/** The key two spellings of an area share ("Arbeit/Plan" and "arbeit/ plan" are the same area). */
+export function areaKey(area: string): string {
+  return areaSegments(area).map(foldName).join("/");
+}
+
+/** True when `area` is `parent` or lies below it. The top level ("") covers only itself. */
+export function areaCovers(parent: string, area: string): boolean {
+  const rule = areaSegments(parent).map(foldName);
+  const target = areaSegments(area).map(foldName);
+  if (rule.length === 0) return target.length === 0;
+  return rule.length <= target.length && rule.every((segment, index) => segment === target[index]);
+}
+
 /** A Markdown path inside the vault, never in a hidden folder or outside of it. */
 export function isVaultNotePath(path: string): boolean {
   const parts = path.split("/");
@@ -145,11 +184,56 @@ export function parseAccessConfig(json: string | null): AgentAccessConfig {
   }
 }
 
+const STRICTNESS: Record<AgentAccess, number> = { read: 0, propose: 1, write: 2 };
+
+/**
+ * What the agent may do in `area` ("Learnings/dev-team" is a sub-area of "Learnings"). The longest
+ * matching rule wins: a sub-area before its parent area before the default. Names are compared
+ * the way `foldName` does ("Arbeit" also covers "arbeit"); two spellings of the same area keep
+ * the strictest right.
+ */
 export function accessFor(config: AgentAccessConfig, area: string): AgentAccess {
-  // A rule for "Arbeit" also covers "arbeit" and "ARBEIT"; the strictest matching rule wins.
-  const folded = Object.entries(config.areas ?? {}).filter(([key]) => foldName(key) === foldName(area)).map(([, value]) => value);
-  if (folded.length === 0) return config.access;
-  return folded.includes("read") ? "read" : folded.includes("propose") ? "propose" : "write";
+  let depth = -1;
+  let access: AgentAccess | null = null;
+  for (const [key, value] of Object.entries(config.areas ?? {})) {
+    if (!areaCovers(key, area)) continue;
+    const length = areaSegments(key).length;
+    if (length > depth) {
+      depth = length;
+      access = value;
+    } else if (length === depth && access !== null && STRICTNESS[value] < STRICTNESS[access]) {
+      access = value;
+    }
+  }
+  return access ?? config.access;
+}
+
+/**
+ * Rights from an API or CLI request: strict, unlike `parseAccessConfig` (which reads a file and
+ * falls back to "propose"). Area names are stored trimmed and joined by "/"; two spellings of one
+ * area keep the strictest right.
+ */
+export function strictAccessConfig(input: unknown, maxAreas = 100): AgentAccessConfig {
+  const value = (input ?? {}) as { access?: unknown; areas?: unknown };
+  if (!AGENT_ACCESS.includes(value.access as AgentAccess)) throw new Error("Access must be read, propose or write.");
+  const raw = value.areas ?? {};
+  if (typeof raw !== "object" || Array.isArray(raw) || raw === null) throw new Error("Areas must be an object of area names and rights.");
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > maxAreas) throw new Error(`At most ${maxAreas} areas can have their own right.`);
+  const areas: Record<string, AgentAccess> = {};
+  const byKey = new Map<string, string>();
+  for (const [name, access] of entries) {
+    const area = normalizeAreaPath(name);
+    if (!area || area.length > 200) throw new Error("An area needs a name of 1 to 200 characters.");
+    if (!AGENT_ACCESS.includes(access as AgentAccess)) throw new Error(`The right for "${area}" must be read, propose or write.`);
+    const key = areaKey(area);
+    const existing = byKey.get(key);
+    if (existing !== undefined && STRICTNESS[areas[existing]!] <= STRICTNESS[access as AgentAccess]) continue;
+    if (existing !== undefined) delete areas[existing];
+    byKey.set(key, area);
+    areas[area] = access as AgentAccess;
+  }
+  return { access: value.access as AgentAccess, areas };
 }
 
 export function newAgentId(prefix: "p" | "c" | "r"): string {

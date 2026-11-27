@@ -1,3 +1,5 @@
+import { isEditableHeading } from "./folder-preview";
+import { WorkspaceNodeContent, workspaceNodeLabels, type WorkspaceNodeLabels } from "./workspace-nodes";
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -6,6 +8,7 @@ import {
   Controls,
   EdgeLabelRenderer,
   Handle,
+  MarkerType,
   MiniMap,
   NodeResizer,
   Position,
@@ -18,7 +21,9 @@ import {
   useEdgesState,
   useInternalNode,
   useNodesState,
+  useNodesInitialized,
   useReactFlow,
+  useUpdateNodeInternals,
   type Connection,
   type Edge,
   type EdgeProps,
@@ -70,19 +75,21 @@ import {
   Redo2,
   Scaling,
   Search,
+  X,
   Scale,
   Sparkles,
   Trash2,
   Undo2,
 } from "lucide-react";
 import type { MarkdownNodeKind, MarkdownNodeMetadata } from "./markdown-document";
-import { toPng } from "html-to-image";
+import { toPng, toSvg } from "html-to-image";
 import { InkEditor } from "./ink-editor";
-import { dataUrlToBytes, exportBounds, exportSize, jpegToPdf } from "./map-export";
+import { composeMapSvg, dataUrlToBytes, exportBounds, exportSize, jpegToPdf, type MapExportEdge, type MapExportOverlayPath } from "./map-export";
+import { headingsToOpml } from "./opml-note";
 import { MapInkLayer } from "./map-ink-layer";
 import { inkContentBounds, serializeInkSvg, type InkDocument } from "./ink-document";
 import { InkDrawingList, nodeDrawings, useInkSession, type InkVaultActions } from "./ink-panel";
-import { floatingEdgeEnds, freePosition, relationEdges, studyCards, studyProgress, withKind, withRelations, type NodeRelation } from "./concept-map";
+import { backlinkEdges, floatingEdgeEnds, freePosition, relationEdges, studyCards, studyProgress, withKind, withRelations, type BacklinkResolver, type NodeRelation, type UnresolvedBacklink } from "./concept-map";
 import { LinkedNoteSection, RelationsSection, hoverNoteHandler, type LinkedNoteHandlers } from "./concept-map-panel";
 import { dayKey, isDue, levelOn, studyOrder, summarize, type LearningDisplay, type LearningEntry, type StudyOrder } from "./learning";
 import { LearningStatus, RatingButtons, branchProgress, learnColor, type CanvasLearning } from "./learning-panel";
@@ -96,6 +103,9 @@ export interface CanvasHeading {
   children: string[];
   kind: "heading" | "file" | "folder";
   filePath?: string;
+  sourceHeadingId?: string;
+  previewError?: string;
+  previewState?: "unloaded" | "loading" | "loaded" | "error";
   metadata?: MarkdownNodeMetadata;
   /** Changed by the agent since the map was last opened. */
   agentChanged?: boolean;
@@ -124,6 +134,8 @@ export interface PersistedCanvasLayout {
   collapsed: string[];
   viewport?: Viewport;
   mode?: "map" | "outline" | "presentation";
+  /** Show backlink edges (display only; never written to the note). Off when absent. */
+  backlinks?: boolean;
 }
 
 export interface BacklinkEntry {
@@ -144,12 +156,18 @@ export interface CanvasActions {
   redo: (selectedId: string | null) => Promise<string | null>;
   persistLayout: (layout: PersistedCanvasLayout) => void;
   openMarkdown: () => void;
+  /** Loads the note again after a failure; without it the error state offers no retry. */
+  reloadNote?: () => void;
   /** Opens the note in the BloomMD app, at the given node when there is one. */
   openBloomMD: (nodeId?: string | null) => void;
   openWikiLink: (target: string) => void;
   openExternalLink: (url: string) => void;
   switchFile: (path: string) => void;
   openFile: (path: string) => void;
+  openOverviewSource?: (path: string, sourceId?: string) => void;
+  loadFolderPreview?: (path: string) => Promise<void>;
+  createOverviewFile?: (folder: string) => void;
+  backToOverview?: () => void;
   readInk: (path: string) => Promise<string | null>;
   saveInk: (nodeId: string, path: string | null, svg: string, expectedSvg: string | null, conflictOf?: string) => Promise<string | null>;
   resolveEmbed: (link: string) => string | null;
@@ -162,8 +180,10 @@ export interface CanvasActions {
   renderMarkdown: (element: HTMLElement, markdown: string) => () => void;
   /** Saves the map's own drawing; creates it (and links it in the frontmatter) when `path` is null. */
   saveMapInk: (path: string | null, svg: string, expectedSvg: string | null, conflictOf?: string) => Promise<string | null>;
-  /** Saves an exported map image into the vault; resolves to its path. */
-  saveExport: (extension: "png" | "pdf", data: Uint8Array) => Promise<string | null>;
+  /** Saves an exported map file (image, OPML or a Markdown copy) into the vault; resolves to its path. */
+  saveExport: (extension: "png" | "pdf" | "svg" | "opml" | "md", data: Uint8Array) => Promise<string | null>;
+  /** The Markdown text of the note this map shows; null when it shows a folder. */
+  readNote: () => Promise<string | null>;
   /** Shows a native Obsidian menu at a screen position. */
   openMenu: (position: { x: number; y: number }, items: CanvasMenuItem[], onHide?: () => void) => void;
   /** Creates a child node of `parentId` titled `title` whose content embeds a new drawing. */
@@ -182,12 +202,18 @@ export interface CanvasMenuItem {
 }
 
 export interface CanvasProps {
+  locale?: string;
+  overview?: boolean;
+  initialSelection?: string | null;
+  initialEditor?: boolean;
   filePath: string;
   headings: CanvasHeading[];
   rootId: string;
   files: Array<{ path: string; title: string }>;
   resources: ResourceEntry[];
   backlinks: BacklinkEntry[];
+  /** Link resolution for the backlink edges mode; without it the mode is not offered. */
+  linkResolver?: BacklinkResolver;
   layout: PersistedCanvasLayout;
   canUndo: boolean;
   canRedo: boolean;
@@ -201,14 +227,18 @@ export interface CanvasProps {
   mapInkRevision?: number;
   /** Personal learning progress of this map; absent for folders or when progress is turned off. */
   learning?: CanvasLearning | null;
+  /** Why the view could not open or load the note; shown instead of the map, with the way back to Markdown. */
+  loadError?: string | null;
   actions: CanvasActions;
 }
 
 /** Editing chrome that does not belong on an exported learning sheet. */
-const EXPORT_HIDDEN = [".react-flow__edges", ".react-flow__resize-control", ".bloommd-node-actions", ".react-flow__handle", ".bloommd-study-bar", ".bloommd-map-ink", ".bloommd-rate"];
+const EXPORT_HIDDEN = [".react-flow__edges", ".react-flow__resize-control", ".bloommd-node-actions", ".react-flow__handle", ".bloommd-study-bar", ".bloommd-map-ink", ".bloommd-rate", ".bloommd-backlink-warning"];
 
 /** Dispatched on the view container by the "Toggle focus mode" command. */
 export const FOCUS_MODE_EVENT = "bloommd:toggle-focus-mode";
+/** Dispatched on the view container by the "Toggle backlink edges" command. */
+export const BACKLINKS_EVENT = "bloommd:toggle-backlink-edges";
 
 export interface CanvasMount {
   /** Element React renders into; focus-mode requests are dispatched on it. */
@@ -282,10 +312,13 @@ interface WikiLink {
 }
 
 interface BloomNodeData extends Record<string, unknown> {
+  workspaceLabels: WorkspaceNodeLabels;
   heading: CanvasHeading;
   collapsed: boolean;
   externalLinkCount: number;
   wikiLinkCount: number;
+  /** Links from this node that backlink mode could not turn into an edge. */
+  unresolvedLinks: UnresolvedBacklink[];
   showContent: boolean;
   drawingUrls: string[];
   sized: boolean;
@@ -318,7 +351,11 @@ interface BloomNodeData extends Record<string, unknown> {
   onToggleTask: (id: string) => void;
   onDelete: (id: string) => void;
   onOpenInspector: (id: string) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, sourceId?: string) => void;
+  onCreateFile?: (folder: string) => void;
+  editSectionLabel: string;
+  newFileLabel: string;
+  previewLabel: string;
   noteHandlers: LinkedNoteHandlers;
 }
 
@@ -351,10 +388,17 @@ function sameCanvasNodeSync(left: BloomFlowNode[], right: BloomFlowNode[]): bool
       && heading.level === nextHeading.level
       && heading.title === nextHeading.title
       && heading.content === nextHeading.content
+      && heading.kind === nextHeading.kind
+      && heading.filePath === nextHeading.filePath
+      && heading.sourceHeadingId === nextHeading.sourceHeadingId
+      && heading.previewState === nextHeading.previewState
+      && heading.previewError === nextHeading.previewError
       && heading.agentChanged === nextHeading.agentChanged
       && heading.children.join("\u0000") === nextHeading.children.join("\u0000")
       && metadataValue(heading.metadata) === metadataValue(nextHeading.metadata)
+      && node.data.workspaceLabels === next.data.workspaceLabels
       && node.data.collapsed === next.data.collapsed
+      && unresolvedKey(node.data.unresolvedLinks) === unresolvedKey(next.data.unresolvedLinks)
       && node.data.showContent === next.data.showContent
       && node.data.drawingUrls.join("\u0000") === next.data.drawingUrls.join("\u0000")
       && node.data.sized === next.data.sized
@@ -370,6 +414,8 @@ function sameCanvasNodeSync(left: BloomFlowNode[], right: BloomFlowNode[]): bool
       && node.data.autoEdit === next.data.autoEdit;
   });
 }
+
+const unresolvedKey = (links: UnresolvedBacklink[]) => links.map((link) => `${link.reason}:${link.link}`).join("\u0000");
 
 function sameCanvasEdgeSync(left: Edge[], right: Edge[]): boolean {
   if (left.length !== right.length) return false;
@@ -585,16 +631,27 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
   const inputRef = useRef<HTMLInputElement>(null);
   const editStartTitleRef = useRef(heading.title);
   const skipBlurCommitRef = useRef(false);
+  // Set by the first key or input in the title field: from then on the field is the person's, not ours.
+  const typedRef = useRef(false);
   const preview = contentPreview(heading.content);
   const isRoot = heading.parentId === null;
-  const editable = heading.kind === "heading";
+  const updateNodeInternals = useUpdateNodeInternals();
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => updateNodeInternals(id));
+    return () => cancelAnimationFrame(frame);
+  }, [id, heading.kind, heading.previewState, heading.children.length, updateNodeInternals]);
+  const editable = isEditableHeading(heading);
 
   useEffect(() => setTitle(heading.title), [heading.title]);
   useEffect(() => {
     if (!editing) return;
+    typedRef.current = false;
     inputRef.current?.focus();
     inputRef.current?.select();
+    // Focus can be taken back right after the double click; take it again, but never select the text
+    // once typing has begun, or the next character would replace what was just typed.
     const timer = window.setTimeout(() => {
+      if (typedRef.current) return;
       inputRef.current?.focus();
       inputRef.current?.select();
     }, 50);
@@ -636,9 +693,12 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
 
   return (
     <div
-      className={`bloommd-flow-node bloommd-level-${Math.min(heading.level, 6)}${selected ? " is-selected" : ""}${data.sized ? " is-sized" : ""}${pressArmed ? " is-press-armed" : ""}${data.learnLevel !== null && data.learnStyle !== "off" ? ` learn-${data.learnStyle}` : ""}${data.learnDue ? " is-due" : ""}${data.outOfSession ? " is-out-of-session" : ""}${heading.agentChanged ? " is-agent-changed" : ""}`}
+      className={`bloommd-flow-node${!editable ? " bloommd-workspace-node" : ""} bloommd-level-${Math.min(heading.level, 6)}${selected ? " is-selected" : ""}${data.sized ? " is-sized" : ""}${pressArmed ? " is-press-armed" : ""}${data.learnLevel !== null && data.learnStyle !== "off" ? ` learn-${data.learnStyle}` : ""}${data.learnDue ? " is-due" : ""}${data.outOfSession ? " is-out-of-session" : ""}${heading.agentChanged ? " is-agent-changed" : ""}`}
       style={learnColor(data.learnColor)}
       data-node-id={id}
+      data-workspace-kind={!editable ? heading.kind : undefined}
+      data-node-root={isRoot ? "true" : "false"}
+      data-selected={selected ? "true" : "false"}
       data-learn-level={data.learnLevel ?? undefined}
       role="treeitem"
       aria-selected={selected}
@@ -664,7 +724,7 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
         if (longPressFired.current) event.preventDefault();
       }}
       onPointerDown={(event) => {
-        if (event.pointerType === "mouse") return;
+        if (event.pointerType === "mouse" || (event.target as HTMLElement).closest("button, input")) return;
         longPressFired.current = false;
         const start = { x: event.clientX, y: event.clientY };
         longPress.current = { start, timer: window.setTimeout(() => {
@@ -706,9 +766,16 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
       onDoubleClick={(event) => {
         event.stopPropagation();
         if (editable) startEditing();
-        else if (heading.filePath) data.onOpenFile(heading.filePath);
+        else if (heading.kind === "folder") data.onToggleCollapse(id);
+        else if (heading.filePath) data.onOpenFile(heading.filePath, heading.sourceHeadingId);
       }}
       onKeyDown={(event) => {
+        if (!editable && event.key === "Enter" && event.target === event.currentTarget) {
+          event.preventDefault(); event.stopPropagation();
+          if (heading.kind === "folder") data.onToggleCollapse(id);
+          else if (heading.filePath) data.onOpenFile(heading.filePath, heading.sourceHeadingId);
+          return;
+        }
         if (editing || !editable) return;
         if (event.key === "F2" || event.key.toLowerCase() === "r") {
           event.preventDefault();
@@ -725,7 +792,9 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
         onResizeEnd={(_, box) => data.onResize(id, box)}
       />
       {!isRoot && <Handle type="target" position={Position.Left} isConnectable={editable} className="bloommd-flow-handle bloommd-flow-handle--target" />}
-      <div className="bloommd-node-heading">
+      {!editable ? <WorkspaceNodeContent kind={heading.kind}
+        title={heading.title} path={heading.filePath} labels={data.workspaceLabels}
+        onOpen={heading.kind === "file" && heading.filePath ? () => data.onOpenFile(heading.filePath!) : undefined} /> : <div className="bloommd-node-heading">
         <span className="bloommd-node-level-dot" aria-label={editable ? `Heading level ${heading.level}` : heading.kind}>
           {editable ? `H${heading.level}` : heading.kind === "folder" ? "DIR" : "MD"}
         </span>
@@ -751,7 +820,10 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
             ref={inputRef}
             className="bloommd-inline-title nodrag"
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => {
+              typedRef.current = true;
+              setTitle(event.target.value);
+            }}
             onBlur={() => {
               if (skipBlurCommitRef.current) {
                 skipBlurCommitRef.current = false;
@@ -761,6 +833,7 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
             }}
             onKeyDown={(event) => {
               event.stopPropagation();
+              typedRef.current = true;
               if (event.key === "Enter") {
                 event.preventDefault();
                 skipBlurCommitRef.current = true;
@@ -775,7 +848,7 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
         ) : (
           <span className="bloommd-node-label">{heading.title}</span>
         )}
-      </div>
+      </div>}
       <TaskFacts metadata={heading.metadata} />
 
       {data.studyHidden ? (
@@ -793,7 +866,7 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
         </button>
       ) : (
         <>
-          {data.showContent && preview && <div className="bloommd-node-preview">{preview}</div>}
+          {editable && data.showContent && preview && <div className="bloommd-node-preview">{preview}</div>}
           {data.showContent && data.drawingUrls[0] && (
             <img className="bloommd-node-drawing" src={data.drawingUrls[0]} alt={`Drawing in ${heading.title}`} draggable={false} />
           )}
@@ -809,18 +882,21 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
         )}
         {data.learnDue && <span className="bloommd-learn-due" title="Due for review">Due</span>}
         {data.branchLabel && <span className="bloommd-learn-branch" title="Mastered in this branch"><Check size={12} />{data.branchLabel}</span>}
-        {heading.children.length > 0 && (
+        {(heading.children.length > 0 || (heading.previewState && heading.previewState !== "loaded")) && (
           <button
             type="button"
             className="bloommd-node-meta-button nodrag"
-            title={data.collapsed ? "Expand branch" : "Collapse branch"}
+            title={heading.previewState && heading.previewState !== "loaded" ? data.previewLabel : data.collapsed ? "Expand branch" : "Collapse branch"}
+            aria-label={heading.previewState && heading.previewState !== "loaded" ? data.previewLabel : data.collapsed ? "Expand branch" : "Collapse branch"}
+            aria-expanded={heading.previewState && heading.previewState !== "loaded" ? false : !data.collapsed}
+            disabled={heading.previewState === "loading"}
             onClick={(event) => {
               event.stopPropagation();
               data.onToggleCollapse(id);
             }}
           >
             {data.collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-            {heading.children.length}
+            {heading.previewState && heading.previewState !== "loaded" ? data.previewLabel : heading.children.length}
           </button>
         )}
         {(data.externalLinkCount > 0 || data.wikiLinkCount > 0) && (
@@ -836,6 +912,16 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
             <Link2 size={13} />
             {data.externalLinkCount + data.wikiLinkCount}
           </button>
+        )}
+        {data.unresolvedLinks.length > 0 && (
+          <span
+            className="bloommd-backlink-warning"
+            title={data.unresolvedLinks.map((link) => `${link.link} (${link.reason})`).join("\n")}
+            aria-label={`${data.unresolvedLinks.length} unresolved ${data.unresolvedLinks.length === 1 ? "link" : "links"}`}
+          >
+            <AlertTriangle size={12} />
+            {data.unresolvedLinks.length}
+          </span>
         )}
         {heading.metadata?.note && (
           <button
@@ -869,6 +955,11 @@ function BloomNode({ id, data, selected }: NodeProps<BloomFlowNode>) {
         )}
       </div>
 
+      {selected && !editable && <div className="bloommd-node-actions nodrag nopan">
+        {heading.kind === "file" && heading.filePath && <button type="button" className="bloommd-workspace-touch-open" onClick={(event) => { event.stopPropagation(); data.onOpenFile(heading.filePath!); }}><FileText size={15} />{data.workspaceLabels.openFile}</button>}
+        {heading.sourceHeadingId && heading.filePath && <button type="button" onClick={(event) => { event.stopPropagation(); data.onOpenFile(heading.filePath!, heading.sourceHeadingId); }}><PenLine size={15} />{data.editSectionLabel}</button>}
+        {heading.kind === "folder" && data.onCreateFile && <button type="button" onClick={(event) => { event.stopPropagation(); data.onCreateFile?.(heading.filePath ?? ""); }}><Plus size={15} />{data.newFileLabel}</button>}
+      </div>}
       {selected && !editing && editable && (
         <div className="bloommd-node-actions nodrag">
           <button type="button" title="Add child" onClick={(event) => { event.stopPropagation(); data.onAddChild(id); }}><Plus size={15} /></button>
@@ -916,8 +1007,24 @@ function RelationEdge(props: EdgeProps) {
   );
 }
 
+/** Backlink mode: a dashed arrow from the linking node to the linked one, display only. */
+function BacklinkEdge(props: EdgeProps) {
+  const source = useInternalNode(props.source);
+  const target = useInternalNode(props.target);
+  if (!source || !target) return null;
+  const box = (node: NonNullable<typeof source>) => ({
+    x: node.internals.positionAbsolute.x,
+    y: node.internals.positionAbsolute.y,
+    width: node.measured.width ?? NODE_WIDTH,
+    height: node.measured.height ?? NODE_HEIGHT,
+  });
+  const { sx, sy, tx, ty } = floatingEdgeEnds(box(source), box(target));
+  const [path] = getStraightPath({ sourceX: sx, sourceY: sy, targetX: tx, targetY: ty });
+  return <BaseEdge path={path} className="bloommd-backlink-edge" markerEnd={props.markerEnd} interactionWidth={0} />;
+}
+
 const nodeTypes = { bloommd: BloomNode };
-const edgeTypes = { bloommd: BloomEdge, relation: RelationEdge };
+const edgeTypes = { bloommd: BloomEdge, relation: RelationEdge, backlink: BacklinkEdge };
 
 function SaveState({ state }: { state: "saved" | "saving" | "conflict" }) {
   if (state === "saving") return <span className="bloommd-save-state">Saving...</span>;
@@ -1627,11 +1734,33 @@ function PresentationMode({
   );
 }
 
+/**
+ * True while the element has a layout size. A leaf that was just split, or a tab that is hidden, is
+ * 0×0 until Obsidian lays it out; React Flow then assumes a 500×500 pane and cannot tell.
+ */
+function useHasSize(element: HTMLElement | null): boolean {
+  const [sized, setSized] = useState(false);
+  useEffect(() => {
+    if (!element) return;
+    const measure = () => setSized(element.clientWidth > 0 && element.clientHeight > 0);
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      setSized(true);
+      return;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return sized;
+}
+
 const NO_ENTRIES: Record<string, LearningEntry> = {};
 const noRate = () => undefined;
 
 function CanvasInner(props: CanvasProps) {
   const reactFlow = useReactFlow<BloomFlowNode>();
+  const fitPending = useRef(true);
   const shellRef = useRef<HTMLDivElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(props.rootId || null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(props.rootId ? [props.rootId] : []));
@@ -1644,6 +1773,7 @@ function CanvasInner(props: CanvasProps) {
   const [study, setStudy] = useState(false);
   const [drawOnMap, setDrawOnMap] = useState(false);
   const [flowHost, setFlowHost] = useState<HTMLElement | null>(null);
+  const flowSized = useHasSize(flowHost);
   const [mapNotice, setMapNotice] = useState<{ message: string; undo?: () => void } | null>(null);
   const mapNoticeTimer = useRef<number | undefined>(undefined);
   const mapInkActions = useMemo(() => ({ readInk: props.actions.readInk, saveInk: props.actions.saveMapInk }), [props.actions.readInk, props.actions.saveMapInk]);
@@ -1706,7 +1836,12 @@ function CanvasInner(props: CanvasProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [mode, setMode] = useState<"map" | "outline" | "presentation">(props.layout.mode ?? "map");
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [pendingReveal, setPendingReveal] = useState<string | null>(null);
+  const [dismissedPreviewErrors, setDismissedPreviewErrors] = useState("");
   const [collapsed, setCollapsed] = useState(() => new Set(props.layout.collapsed));
+  const [showBacklinks, setShowBacklinks] = useState(Boolean(props.layout.backlinks));
   const [saveState, setSaveState] = useState<"saved" | "saving" | "conflict">("saved");
   const pendingChildAdds = useRef(new Set<string>());
   const pendingSiblingAdds = useRef(new Set<string>());
@@ -1721,6 +1856,7 @@ function CanvasInner(props: CanvasProps) {
   const presentationIndex = Math.max(0, presentationIds.indexOf(selectedId ?? ""));
 
   const selectNode = useCallback((id: string, additive = false) => {
+    setAutoEditId(null);
     const next = additive ? new Set(selectedIdsRef.current) : new Set<string>();
     if (additive && next.has(id)) next.delete(id);
     else next.add(id);
@@ -1743,6 +1879,7 @@ function CanvasInner(props: CanvasProps) {
       ...(patch.sizes || latestLayout.current.sizes ? { sizes: patch.sizes ?? latestLayout.current.sizes } : {}),
       ...(patch.viewport || latestLayout.current.viewport ? { viewport: patch.viewport ?? latestLayout.current.viewport } : {}),
       ...(patch.mode || latestLayout.current.mode ? { mode: patch.mode ?? latestLayout.current.mode } : {}),
+      ...(patch.backlinks !== undefined || latestLayout.current.backlinks !== undefined ? { backlinks: patch.backlinks ?? latestLayout.current.backlinks } : {}),
     };
     latestLayout.current = next;
     props.actions.persistLayout(next);
@@ -1753,7 +1890,20 @@ function CanvasInner(props: CanvasProps) {
     persist({ mode: next });
   }, [persist]);
 
+  const toggleBacklinks = useCallback(() => {
+    setShowBacklinks((current) => {
+      persist({ backlinks: !current });
+      return !current;
+    });
+  }, [persist]);
+
   const toggleCollapse = useCallback((id: string) => {
+    const heading = headingsById.get(id);
+    if (heading?.kind === "file" && heading.previewState !== "loaded" && heading.filePath && props.actions.loadFolderPreview) {
+      void props.actions.loadFolderPreview(heading.filePath).catch((error: unknown) => console.error("BloomMD: preview failed", error));
+      setCollapsed((current) => { const next = new Set(current); next.delete(id); persist({ collapsed: [...next] }); return next; });
+      return;
+    }
     setCollapsed((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -1761,7 +1911,7 @@ function CanvasInner(props: CanvasProps) {
       persist({ collapsed: [...next] });
       return next;
     });
-  }, [persist]);
+  }, [persist, headingsById, props.actions]);
 
   const addChild = useCallback((id: string) => {
     if (!claimPendingAction(pendingChildAdds.current, id)) return;
@@ -1827,7 +1977,7 @@ function CanvasInner(props: CanvasProps) {
     setSizeRevision((value) => value + 1);
   }, [persist]);
 
-  const exportMap = useCallback(async (format: "png" | "pdf") => {
+  const exportMap = useCallback(async (format: "png" | "pdf" | "svg") => {
     const shell = shellRef.current;
     const viewportElement = shell?.querySelector<HTMLElement>(".react-flow__viewport");
     if (!shell || !viewportElement) return;
@@ -1841,15 +1991,50 @@ function CanvasInner(props: CanvasProps) {
     const background = flowBackground && flowBackground !== "rgba(0, 0, 0, 0)" ? flowBackground : getComputedStyle(document.body).backgroundColor;
     try {
       // Nodes and labels come from html-to-image, without edges and without editing chrome.
-      const nodesUrl = await toPng(viewportElement, {
+      const nodesOptions = {
         width,
         height,
         pixelRatio: 1,
         // Fonts are the system's; skipping the web-font scan avoids fetching Obsidian's stylesheets.
         skipFonts: true,
-        filter: (node) => !(node.instanceOf(Element) && EXPORT_HIDDEN.some((selector) => node.matches(selector))),
+        filter: (node: HTMLElement) => !(node.instanceOf(Element) && EXPORT_HIDDEN.some((selector) => node.matches(selector))),
         style: { width: `${width}px`, height: `${height}px`, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` },
-      });
+      };
+      if (format === "svg") {
+        // A real SVG file: edges and handwriting as vector paths, nodes as live text (no bitmap).
+        const svgUrl = await toSvg(viewportElement, nodesOptions);
+        const edges: MapExportEdge[] = [];
+        for (const path of shell.querySelectorAll<SVGPathElement>(".react-flow__edges path")) {
+          const style = getComputedStyle(path);
+          const d = path.getAttribute("d");
+          // Backlink edges are a view mode; the exported map stays the same with it on or off.
+          if (!d || style.stroke === "none" || style.visibility === "hidden" || path.classList.contains("bloommd-backlink-edge")) continue;
+          edges.push({
+            d,
+            stroke: style.stroke,
+            strokeWidth: Number.parseFloat(style.strokeWidth) || 1,
+            dashArray: style.strokeDasharray && style.strokeDasharray !== "none" ? style.strokeDasharray.split(/[ ,]+/).map(Number.parseFloat) : [],
+            lineCap: style.strokeLinecap || undefined,
+          });
+        }
+        const overlay: MapExportOverlayPath[] = [];
+        for (const path of shell.querySelectorAll<SVGPathElement>(".bloommd-map-ink path[data-stroke-id]")) {
+          const d = path.getAttribute("d");
+          if (d) overlay.push({ d, fill: path.getAttribute("fill") ?? "#000", opacity: Number.parseFloat(path.getAttribute("fill-opacity") ?? "1") || 1 });
+        }
+        const svg = composeMapSvg({
+          width,
+          height,
+          background,
+          view: { x: view.x, y: view.y, scale: view.zoom },
+          edges,
+          nodesSvg: decodeURIComponent(svgUrl.slice(svgUrl.indexOf(",") + 1)),
+          overlay,
+        });
+        await props.actions.saveExport("svg", new TextEncoder().encode(svg));
+        return;
+      }
+      const nodesUrl = await toPng(viewportElement, nodesOptions);
       // React Flow draws each edge in its own unsized SVG, which html-to-image loses; the edges are
       // painted directly from their path data underneath the nodes instead.
       const canvas = createEl("canvas");
@@ -1894,6 +2079,21 @@ function CanvasInner(props: CanvasProps) {
     }
   }, [shownMapInk, props.actions, reactFlow]);
 
+  const exportText = useCallback(async (format: "md" | "opml") => {
+    try {
+      if (format === "opml") {
+        const title = props.filePath.replace(/^.*\//, "").replace(/\.md$/i, "");
+        await props.actions.saveExport("opml", new TextEncoder().encode(headingsToOpml(title, props.headings)));
+        return;
+      }
+      const markdown = await props.actions.readNote();
+      if (markdown === null) return;
+      await props.actions.saveExport("md", new TextEncoder().encode(markdown));
+    } catch (error) {
+      console.error("BloomMD could not export the map", error);
+    }
+  }, [props.actions, props.filePath, props.headings]);
+
   useEffect(() => {
     // Load the map's drawing when the note links one; keep an open session while the frontmatter
     // link of a just-created drawing is still being indexed, but never show it on another note.
@@ -1931,7 +2131,7 @@ function CanvasInner(props: CanvasProps) {
   const connectByStroke = useCallback((source: string, target: string) => {
     const from = headingsById.get(source);
     const to = headingsById.get(target);
-    if (!from || !to || from.kind !== "heading" || to.kind !== "heading") return;
+    if (!from || !to || !isEditableHeading(from) || !isEditableHeading(to)) return;
     const relations = [...(from.metadata?.relations ?? []).filter((relation) => relation.target !== target), { target }];
     void run(() => props.actions.updateMetadata(source, withRelations(from.metadata, relations), from.metadata)).then((saved) => {
       if (saved) showMapNotice(`Connected ${from.title} → ${to.title}`, () => applyHistoryRef.current("undo"));
@@ -1948,7 +2148,7 @@ function CanvasInner(props: CanvasProps) {
 
   const openNodeMenu = useCallback((id: string, position: { x: number; y: number }) => {
     const heading = headingsById.get(id);
-    if (!heading || heading.kind !== "heading") return;
+    if (!heading || !isEditableHeading(heading)) return;
     const isRoot = heading.parentId === null;
     const note = heading.metadata?.note;
     const items: CanvasMenuItem[] = [
@@ -1995,6 +2195,12 @@ function CanvasInner(props: CanvasProps) {
     };
   }, [branches, entries, headingsById, learnSettings, levels, rateNode, revealed, sessionSet, spaced, study, today]);
 
+  const backlinkModel = useMemo(() => (
+    showBacklinks && props.linkResolver
+      ? backlinkEdges(props.headings, visibleIds, props.linkResolver, relationEdges(props.headings, visibleIds))
+      : { edges: [], unresolved: [] }
+  ), [props.headings, props.linkResolver, showBacklinks, visibleIds]);
+
   const flowModel = useMemo(() => {
     // Real sizes where React Flow has measured them: previews and drawings make nodes much taller
     // than the default, and layout and collision checks must see that.
@@ -2005,7 +2211,7 @@ function CanvasInner(props: CanvasProps) {
     }
     const layoutSizes = { ...measured, ...runtimeSizes.current };
     const automatic = autoLayout(props.headings, visibleIds, layoutSizes);
-    const stored = (id: string) => runtimePositions.current[id] ?? props.layout.positions[id];
+    const stored = (id: string) => props.overview ? undefined : runtimePositions.current[id] ?? props.layout.positions[id];
     const boxOf = (id: string, position: NodePosition) => ({
       ...position,
       width: layoutSizes[id]?.width ?? NODE_WIDTH,
@@ -2030,13 +2236,17 @@ function CanvasInner(props: CanvasProps) {
       .map((heading) => ({
         id: heading.id,
         type: "bloommd",
+        draggable: !props.overview,
+        connectable: !props.overview,
         position: positionOf(heading.id),
         ...(runtimeSizes.current[heading.id] ? { width: runtimeSizes.current[heading.id]!.width, height: runtimeSizes.current[heading.id]!.height } : {}),
         data: {
+          workspaceLabels: workspaceNodeLabels(props.locale ?? "en"),
           heading,
           collapsed: collapsed.has(heading.id),
           externalLinkCount: externalLinks(heading.content).length,
           wikiLinkCount: wikiLinks(heading.content).length,
+          unresolvedLinks: backlinkModel.unresolved.filter((link) => link.source === heading.id),
           // Study mode always shows content once revealed; that is what one studies.
           showContent: props.showNodeContent || study,
           studyHidden: study && sessionSet.has(heading.id) && !revealed.has(heading.id),
@@ -2066,10 +2276,19 @@ function CanvasInner(props: CanvasProps) {
           },
           onDelete: (id) => deleteNode(id),
           onOpenInspector: (id) => {
+            const heading = headingsById.get(id);
+            if (props.overview && heading?.filePath) {
+              (props.actions.openOverviewSource ?? props.actions.openFile)(heading.filePath, heading.sourceHeadingId);
+              return;
+            }
             selectNode(id);
             setInspectorOpen(true);
           },
-          onOpenFile: props.actions.openFile,
+          onOpenFile: props.overview ? props.actions.openOverviewSource ?? props.actions.openFile : props.actions.openFile,
+          onCreateFile: props.actions.createOverviewFile,
+          editSectionLabel: props.locale?.startsWith("de") ? "Abschnitt bearbeiten" : "Edit section",
+          newFileLabel: props.locale?.startsWith("de") ? "Neue Datei" : "New file",
+          previewLabel: props.locale?.startsWith("de") ? "Inhalte anzeigen" : "Show contents",
           noteHandlers,
         },
       }));
@@ -2089,19 +2308,31 @@ function CanvasInner(props: CanvasProps) {
       selectable: false,
       ...(edge.label ? { label: edge.label } : {}),
     }));
-    return { nodes, edges: [...edges, ...relations] };
+    const backlinkList: Edge[] = backlinkModel.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      type: "backlink",
+      selectable: false,
+      deletable: false,
+      focusable: false,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#8b8b8b" },
+    }));
+    return { nodes, edges: [...edges, ...relations, ...backlinkList] };
     // sizeRevision is listed because sizes live in a ref and change without new props.
-  }, [addChild, addSibling, autoEditId, cards, collapsed, deleteNode, headingsById, learnData, noteHandlers, openNodeMenu, props.actions, reactFlow, reveal, revealed, sessionSet, study, props.headings, props.layout.positions, props.showNodeContent, resetNodeSize, resizeNode, run, selectNode, sizeRevision, toggleCollapse, visibleIds]);
+  }, [addChild, addSibling, autoEditId, cards, collapsed, deleteNode, headingsById, learnData, noteHandlers, openNodeMenu, props.actions, reactFlow, reveal, revealed, sessionSet, study, props.locale, props.overview, props.headings, props.layout.positions, props.showNodeContent, backlinkModel, resetNodeSize, resizeNode, run, selectNode, sizeRevision, toggleCollapse, visibleIds]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<BloomFlowNode>(flowModel.nodes);
+  const nodesInitialized = useNodesInitialized();
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowModel.edges);
 
   useEffect(() => {
     setNodes((current) => {
+      const measured = new Map(current.map((node) => [node.id, node.measured]));
       const positions = new Map(current.map((node) => [node.id, node.position]));
       const selected = new Map(current.map((node) => [node.id, node.selected]));
       const next = flowModel.nodes.map((node) => {
-        const merged = { ...node, selected: selected.get(node.id) ?? false, position: positions.get(node.id) ?? node.position };
+        const merged = { ...node, measured: measured.get(node.id), selected: selected.get(node.id) ?? false, position: props.overview ? node.position : positions.get(node.id) ?? node.position };
         // A reset size must drop the fixed dimensions so the node measures its content again.
         if (node.width === undefined) {
           delete merged.width;
@@ -2112,7 +2343,7 @@ function CanvasInner(props: CanvasProps) {
       return sameCanvasNodeSync(current, next) ? current : next;
     });
     setEdges((current) => sameCanvasEdgeSync(current, flowModel.edges) ? current : flowModel.edges);
-  }, [flowModel, setEdges, setNodes]);
+  }, [flowModel, props.overview, setEdges, setNodes]);
 
   useEffect(() => {
     if (selectedId && !headingsById.has(selectedId)) {
@@ -2129,30 +2360,54 @@ function CanvasInner(props: CanvasProps) {
     runtimeSizes.current = { ...(props.layout.sizes ?? {}) };
     latestLayout.current = props.layout ?? EMPTY_LAYOUT;
     setCollapsed(new Set(props.layout.collapsed ?? []));
-    setSelectedId(props.rootId || null);
-    const next = new Set(props.rootId ? [props.rootId] : []);
+    const initial = props.initialSelection && headingsById.has(props.initialSelection) ? props.initialSelection : props.rootId;
+    if (props.initialEditor && initial) setCollapsed((current) => {
+      const next = new Set(current); let parent = headingsById.get(initial)?.parentId;
+      while (parent) { next.delete(parent); parent = headingsById.get(parent)?.parentId; }
+      return next;
+    });
+    setSelectedId(initial || null);
+    const next = new Set(initial ? [initial] : []);
     selectedIdsRef.current = next;
     setSelectedIds(next);
     setCopiedBranchIds([]);
-    setInspectorOpen(false);
+    setInspectorOpen(Boolean(props.initialEditor));
     setAutoEditId(null);
     setHelpOpen(false);
     setMode(props.layout.mode ?? "map");
     setSearch("");
+    setSearchOpen(false);
+    setPendingReveal(null);
     setDrawOnMap(false);
     setStudy(false);
     setRevealed(new Set());
     setSessionIds(null);
     setOrderChoice(null);
-    window.setTimeout(() => {
+    fitPending.current = true;
+    const timer = window.setTimeout(() => {
       reactFlow.setNodes((current) => current.map((node) => {
-        const selected = node.id === props.rootId;
+        const selected = node.id === initial;
         return node.selected === selected ? node : { ...node, selected };
       }));
-      if (props.layout.viewport) void reactFlow.setViewport(props.layout.viewport, { duration: 0 });
-      else void reactFlow.fitView({ padding: 0.25, duration: 180 });
+      if (initial) requestNodeFocus(initial);
     }, 20);
+    return () => window.clearTimeout(timer);
   }, [props.filePath]);
+
+  // Wait for this document's measured nodes, including lazy folder previews, before the first fit.
+  useEffect(() => {
+    if (!flowSized || !nodesInitialized || !fitPending.current) return;
+    const rendered = reactFlow.getNodes();
+    if (rendered.length !== visibleIds.size || rendered.some((node) => !visibleIds.has(node.id) || !node.measured?.width || !node.measured?.height)) return;
+    let cancelled = false;
+    const frame = requestAnimationFrame(() => {
+      const move = props.layout.viewport
+        ? reactFlow.setViewport(props.layout.viewport, { duration: 0 })
+        : reactFlow.fitView({ padding: 0.25, duration: 0 });
+      void move.then((applied) => { if (applied && !cancelled) fitPending.current = false; });
+    });
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [props.filePath, props.layout.viewport, flowSized, nodesInitialized, nodes, reactFlow, visibleIds]);
 
   useEffect(() => {
     if (!inspectorOpen) setInspectorFullscreen(false);
@@ -2161,18 +2416,48 @@ function CanvasInner(props: CanvasProps) {
   const nextCard = session.find((id) => !revealed.has(id) && id !== selectedId) ?? null;
 
   const focusNode = useCallback((id: string) => {
-    const node = reactFlow.getNode(id);
-    selectNode(id);
-    requestNodeFocus(id);
-    if (mode === "map" && node) {
-      void reactFlow.fitView({ nodes: [node], padding: 1.3, duration: 240, maxZoom: 1.15 });
+    if (!headingsById.has(id)) return;
+    const next = new Set(collapsed);
+    const visited = new Set<string>();
+    let parent = headingsById.get(id)?.parentId;
+    while (parent && !visited.has(parent)) {
+      visited.add(parent); next.delete(parent); parent = headingsById.get(parent)?.parentId;
     }
-  }, [mode, reactFlow, selectNode]);
+    fitPending.current = false;
+    setCollapsed(next);
+    persist({ collapsed: [...next], mode: "map" });
+    setMode("map");
+    selectNode(id);
+    setPendingReveal(id);
+  }, [collapsed, headingsById, persist, selectNode]);
+
+  useEffect(() => {
+    if (!pendingReveal || mode !== "map" || !flowSized || !nodesInitialized) return;
+    const rendered = reactFlow.getNodes();
+    if (rendered.length !== visibleIds.size || rendered.some((node) => !visibleIds.has(node.id))) return;
+    const node = reactFlow.getNode(pendingReveal);
+    if (!node?.measured?.width || !node.measured.height) return;
+    const timer = window.setTimeout(() => {
+      void reactFlow.setCenter(node.position.x + node.measured!.width! / 2, node.position.y + node.measured!.height! / 2,
+        { zoom: Math.max(0.8, reactFlow.getZoom()), duration: 0 }).then(() => requestNodeFocus(pendingReveal))
+        .catch((error: unknown) => console.error("BloomMD: node reveal failed", error));
+      setNodes((current) => current.map((item) => ({ ...item, selected: item.id === pendingReveal })));
+      selectNode(pendingReveal);
+      setPendingReveal(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [pendingReveal, mode, flowSized, nodesInitialized, nodes, reactFlow, visibleIds, selectNode, setNodes]);
 
   const openInspector = useCallback((id: string) => {
+    const heading = headingsById.get(id);
+    if (props.overview) {
+      if (heading?.filePath && heading.kind !== "folder") (props.actions.openOverviewSource ?? props.actions.openFile)(heading.filePath, heading.sourceHeadingId);
+      else toggleCollapse(id);
+      return;
+    }
     selectNode(id);
     setInspectorOpen(true);
-  }, [selectNode]);
+  }, [selectNode, headingsById, props.overview, props.actions, toggleCollapse]);
 
   /** Selects a node the way a click on it would, including React Flow's own selection. */
   const selectOnMap = useCallback((id: string) => {
@@ -2322,22 +2607,22 @@ function CanvasInner(props: CanvasProps) {
     // Keys pressed on inspector controls (e.g. Backspace on a drawing tool) must not edit the map.
     if (target.closest(".bloommd-inspector") && event.key !== "Escape") return;
 
-    if (primary && event.key.toLowerCase() === "c") {
+    if (!props.overview && primary && event.key.toLowerCase() === "c") {
       event.preventDefault();
       copySelection();
       return;
     }
-    if (primary && event.key.toLowerCase() === "v") {
+    if (!props.overview && primary && event.key.toLowerCase() === "v") {
       event.preventDefault();
       pasteSelection();
       return;
     }
-    if (primary && event.key.toLowerCase() === "z" && !event.shiftKey) {
+    if (!props.overview && primary && event.key.toLowerCase() === "z" && !event.shiftKey) {
       event.preventDefault();
       applyHistory("undo");
       return;
     }
-    if ((primary && event.key.toLowerCase() === "z" && event.shiftKey) || (primary && event.key.toLowerCase() === "y")) {
+    if (!props.overview && ((primary && event.key.toLowerCase() === "z" && event.shiftKey) || (primary && event.key.toLowerCase() === "y"))) {
       event.preventDefault();
       applyHistory("redo");
       return;
@@ -2349,7 +2634,15 @@ function CanvasInner(props: CanvasProps) {
       else selectNode(props.rootId);
       return;
     }
-    if (!selectedId || !selectedHeading || selectedHeading.kind !== "heading") return;
+    if (props.overview) {
+      if (event.key === "Enter" && selectedHeading) { event.preventDefault(); openInspector(selectedHeading.id); }
+      else if (event.key === "ArrowRight") { event.preventDefault(); navigateSelection("child"); }
+      else if (event.key === "ArrowLeft") { event.preventDefault(); navigateSelection("parent"); }
+      else if (event.key === "ArrowDown") { event.preventDefault(); navigateSelection("next"); }
+      else if (event.key === "ArrowUp") { event.preventDefault(); navigateSelection("previous"); }
+      return;
+    }
+    if (!selectedId || !selectedHeading || !isEditableHeading(selectedHeading)) return;
     const currentId = selectedId;
     // Study mode: Space reveals the selected card, 1–5 rate a revealed one and move on to the next.
     if (study && mode === "map" && !primary && !event.altKey && sessionSet.has(currentId)) {
@@ -2434,6 +2727,13 @@ function CanvasInner(props: CanvasProps) {
   }, []);
 
   useEffect(() => {
+    const root = shellRef.current?.parentElement;
+    if (!root) return;
+    root.addEventListener(BACKLINKS_EVENT, toggleBacklinks);
+    return () => root.removeEventListener(BACKLINKS_EVENT, toggleBacklinks);
+  }, [toggleBacklinks]);
+
+  useEffect(() => {
     // The React root container: listeners here run after React's own root listener (registered
     // first), so React still sees every touch while Obsidian's ancestors do not.
     const root = shellRef.current?.parentElement;
@@ -2467,14 +2767,29 @@ function CanvasInner(props: CanvasProps) {
   }, [persist, props.headings, reactFlow, setNodes, visibleIds]);
 
   const searchMatches = search.trim()
-    ? props.headings.filter((heading) => heading.title.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 8)
+    ? props.headings.filter((heading) => `${heading.title} ${heading.filePath ?? props.filePath}`.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 8)
     : [];
 
+  const previewErrors = props.headings.filter((heading) => heading.previewError);
+  const previewErrorKey = JSON.stringify(previewErrors.map(({ id, previewError }) => [id, previewError]));
+  const de = props.locale?.startsWith("de");
   return (
     <div
       ref={shellRef}
       className={`bloommd-react-shell${focusMode ? " is-focus" : ""}`}
+      style={{ "--bloommd-canvas-zoom": props.layout.viewport?.zoom ?? 0.9 } as React.CSSProperties}
     >
+      {(props.overview || props.actions.backToOverview) && <div className="bloommd-overview-bar">
+        {props.overview ? <><strong>{props.locale?.startsWith("de") ? "Ordnerübersicht" : "Folder overview"}</strong><span>{props.locale?.startsWith("de") ? "Öffne eine Datei, um Inhalte zu bearbeiten." : "Open a file to edit its contents."}</span></> : <button type="button" onClick={props.actions.backToOverview}><ArrowLeft size={16} />{props.locale?.startsWith("de") ? "Zur Ordnerübersicht" : "Back to folder overview"}</button>}
+      </div>}
+      {previewErrors.length > 0 && <div className="bloommd-preview-errors">
+        {dismissedPreviewErrors === previewErrorKey
+          ? <button type="button" onClick={() => setDismissedPreviewErrors("")}>{de ? "Ladehinweise anzeigen" : "Show loading issues"} ({previewErrors.length})</button>
+          : <><details><summary>{previewErrors.length} {de ? "Inhaltsvorschauen nicht geladen" : "content previews unavailable"}</summary>
+              <p>{de ? "Die Dateiknoten bleiben sichtbar. Prüfe die Datei in Obsidian und lade ihre Vorschau erneut." : "File nodes remain visible. Check the note in Obsidian and retry its preview."}</p>
+              {previewErrors.map((heading) => <p key={heading.id}><strong>{heading.filePath}</strong>: {heading.previewError} <button type="button" onClick={() => void props.actions.loadFolderPreview?.(heading.filePath!)}>{de ? "Erneut prüfen" : "Retry"}</button></p>)}
+            </details><button type="button" aria-label={de ? "Ladehinweise ausblenden" : "Dismiss loading issues"} onClick={() => setDismissedPreviewErrors(previewErrorKey)}><X size={16} /></button></>}
+      </div>}
       <div className="bloommd-app-toolbar">
         <div className="bloommd-toolbar-group" aria-label="File navigation">
           <button type="button" className="bloommd-icon-control" title="Back to Markdown" aria-label="Back to Markdown" onClick={props.actions.openMarkdown}><ArrowLeft size={17} /></button>
@@ -2484,24 +2799,28 @@ function CanvasInner(props: CanvasProps) {
               {props.files.map((file) => <option key={file.path} value={file.path}>{file.title}</option>)}
             </select>
           </div>
-          <div className="bloommd-search">
+          <button type="button" className="bloommd-icon-control bloommd-search-toggle" aria-label={de ? "Knoten suchen" : "Find node"} onClick={() => { setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 0); }}><Search size={17} /></button>
+          <div className={`bloommd-search${searchOpen ? " is-open" : ""}`}>
             <Search size={15} />
             <input
+              ref={searchRef}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && searchMatches[0]) {
                   event.preventDefault();
                   focusNode(searchMatches[0].id);
-                  setSearch("");
+                  setSearch(""); setSearchOpen(false);
                 }
               }}
-              placeholder="Find node"
-              aria-label="Find node"
+              placeholder={de ? "Knoten oder Dateipfad suchen" : "Find node or file path"}
+              aria-label={de ? "Knoten suchen" : "Find node"}
             />
+            {searchOpen && <button type="button" className="bloommd-icon-control" aria-label={de ? "Suche schließen" : "Close search"} onClick={() => { setSearchOpen(false); setSearch(""); }}><X size={16} /></button>}
+            {search.trim() && searchMatches.length === 0 && <div className="bloommd-search-results">{de ? "Keine geladenen Knoten gefunden" : "No loaded nodes found"}</div>}
             {searchMatches.length > 0 && (
               <div className="bloommd-search-results">
-                {searchMatches.map((heading) => <button key={heading.id} type="button" onClick={() => { focusNode(heading.id); setSearch(""); }}>{heading.title}</button>)}
+                {searchMatches.map((heading) => <button key={heading.id} type="button" onClick={() => { focusNode(heading.id); setSearch(""); setSearchOpen(false); }}>{heading.title}<small>{heading.filePath ?? props.filePath}</small></button>)}
               </div>
             )}
           </div>
@@ -2511,8 +2830,17 @@ function CanvasInner(props: CanvasProps) {
           <button type="button" className={`bloommd-mode-button${mode === "outline" ? " is-active" : ""}`} aria-pressed={mode === "outline"} title="Outline mode (Alt+2)" onClick={() => changeMode("outline")}><ListTree size={15} /><span>Outline</span></button>
           <button type="button" className={`bloommd-mode-button${mode === "presentation" ? " is-active" : ""}`} aria-pressed={mode === "presentation"} title="Presentation mode (Alt+3)" onClick={() => changeMode("presentation")}><Presentation size={15} /><span>Present</span></button>
         </div>
+        {props.linkResolver && (
+          <button
+            type="button"
+            className={`bloommd-mode-button${showBacklinks ? " is-active" : ""}`}
+            aria-pressed={showBacklinks}
+            title="Backlink edges"
+            onClick={toggleBacklinks}
+          ><Link2 size={15} /><span>Backlinks</span></button>
+        )}
         <span className="bloommd-toolbar-spacer" />
-        <div className="bloommd-toolbar-group" aria-label="Editing tools">
+        {!props.overview && <div className="bloommd-toolbar-group" aria-label="Editing tools">
           {props.sharedStatus && <span className={`bloommd-share-status is-${props.sharedStatus}`} title={sharedStatusLabel(props.sharedStatus)}><Cloud size={14} />{sharedStatusLabel(props.sharedStatus)}</span>}
           <SaveState state={saveState} />
           <button type="button" className="bloommd-icon-control" title="Copy selected branches (Cmd/Ctrl+C)" aria-label="Copy selected branches" disabled={selectedIds.size === 0} onClick={copySelection}><Copy size={17} /></button>
@@ -2520,11 +2848,12 @@ function CanvasInner(props: CanvasProps) {
           <button type="button" className="bloommd-icon-control" title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" disabled={!props.canUndo} onClick={() => applyHistory("undo")}><Undo2 size={17} /></button>
           <button type="button" className="bloommd-icon-control" title="Redo (Cmd/Ctrl+Shift+Z)" aria-label="Redo" disabled={!props.canRedo} onClick={() => applyHistory("redo")}><Redo2 size={17} /></button>
         </div>
+        }
         <div className="bloommd-toolbar-group" aria-label="Canvas tools">
           {mode === "map" && <button type="button" className="bloommd-icon-control" title="Auto layout" aria-label="Auto layout" onClick={performAutoLayout}><Sparkles size={17} /></button>}
           {mode === "map" && <button type="button" className="bloommd-icon-control" title="Fit view" aria-label="Fit view" onClick={() => void reactFlow.fitView({ padding: 0.25, duration: 240 })}><LocateFixed size={17} /></button>}
-          {selectedId && <button type="button" className="bloommd-icon-control" title="Focus selected node" aria-label="Focus selected node" onClick={() => focusNode(selectedId)}><Focus size={17} /></button>}
-          {mode === "map" && (
+          {selectedId && <button type="button" className="bloommd-icon-control" title={de ? "Ausgewählten Knoten zeigen" : "Focus selected node"} aria-label={de ? "Ausgewählten Knoten zeigen" : "Focus selected node"} onClick={() => focusNode(selectedId)}><Focus size={17} /></button>}
+          {!props.overview && mode === "map" && (
             <button
               type="button"
               className="bloommd-icon-control"
@@ -2539,24 +2868,28 @@ function CanvasInner(props: CanvasProps) {
               <Signature size={17} />
             </button>
           )}
-          {mode === "map" && (
+          {!props.overview && mode === "map" && (
             <button
               type="button"
               className="bloommd-icon-control"
-              title="Export map as PNG or PDF"
+              title="Export map"
               aria-label="Export map"
               onClick={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 openMenu({ x: rect.left, y: rect.bottom + 4 }, [
+                  // Same entries in the same order as the export menu of the apps.
+                  { title: "Export as Markdown", icon: "file-text", onClick: () => void exportText("md") },
+                  { title: "Export as OPML", icon: "list-tree", onClick: () => void exportText("opml") },
+                  { title: "Export as PDF", icon: "file-down", onClick: () => void exportMap("pdf") },
                   { title: "Export as PNG", icon: "image", onClick: () => void exportMap("png") },
-                  { title: "Export as PDF", icon: "file-text", onClick: () => void exportMap("pdf") },
+                  { title: "Export as SVG", icon: "shapes", onClick: () => void exportMap("svg") },
                 ]);
               }}
             >
               <ImageDown size={17} />
             </button>
           )}
-          <button
+          {!props.overview && <button
             type="button"
             className="bloommd-icon-control"
             title={study ? "Leave study mode" : "Study mode: cover node contents"}
@@ -2569,7 +2902,7 @@ function CanvasInner(props: CanvasProps) {
             }}
           >
             <GraduationCap size={17} />
-          </button>
+          </button>}
           <button
             type="button"
             className="bloommd-icon-control"
@@ -2581,7 +2914,7 @@ function CanvasInner(props: CanvasProps) {
             {focusMode ? <Shrink size={17} /> : <Expand size={17} />}
           </button>
           <button type="button" className="bloommd-icon-control" title="Shortcut help (F1 or ?)" aria-label="Shortcut help" onClick={() => setHelpOpen(true)}><Keyboard size={17} /></button>
-          {props.canOpenApp !== false && <button type="button" className="bloommd-text-control" title="Open this note in BloomMD Desktop, at the selected node" aria-label="Open app" onClick={() => props.actions.openBloomMD(selectedId)}><ExternalLink size={15} /><span>Open app</span></button>}
+          {!props.overview && props.canOpenApp !== false && <button type="button" className="bloommd-text-control" title="Open this note in BloomMD Desktop, at the selected node" aria-label="Open app" onClick={() => props.actions.openBloomMD(selectedId)}><ExternalLink size={15} /><span>Open app</span></button>}
         </div>
       </div>
 
@@ -2602,7 +2935,11 @@ function CanvasInner(props: CanvasProps) {
               setSelectedIds((current) => current.size === 0 ? current : next);
             }}
             onSelectionChange={({ nodes: selectedNodes }) => {
-              const ids = new Set(selectedNodes.map((node) => node.id));
+              if (pendingReveal) return;
+              const ids = new Set(selectedNodes.map((node) => node.id).filter((id) => headingsById.has(id)));
+              // React Flow can report the previous document while controlled nodes are replaced.
+              // Only an explicit pane click clears selection.
+              if (ids.size === 0) return;
               if (!sameStringSet(selectedIdsRef.current, ids)) {
                 selectedIdsRef.current = ids;
                 setSelectedIds(ids);
@@ -2634,6 +2971,7 @@ function CanvasInner(props: CanvasProps) {
             deleteKeyCode={null}
             selectionKeyCode="Shift"
             multiSelectionKeyCode="Shift"
+            onMove={(_, viewport) => shellRef.current?.style.setProperty("--bloommd-canvas-zoom", String(viewport.zoom))}
             onMoveEnd={(_, viewport) => persist({ viewport })}
             proOptions={{ hideAttribution: true }}
           >
@@ -2723,7 +3061,7 @@ function CanvasInner(props: CanvasProps) {
             </div>
           )}
           {/* In study mode the editor would show covered content, and the study bar needs the room. */}
-          {!inspectorOpen && !study && mode === "map" && selectedHeading?.kind === "heading" && (
+          {!inspectorOpen && !study && !drawOnMap && mode === "map" && selectedHeading && isEditableHeading(selectedHeading) && (
             <button type="button" className="bloommd-open-inspector" onClick={() => setInspectorOpen(true)} title="Open content editor">
               <PanelRightOpen size={16} />
               Edit content
@@ -2731,7 +3069,7 @@ function CanvasInner(props: CanvasProps) {
           )}
         </main>
 
-        {inspectorOpen && selectedHeading?.kind === "heading" && (
+        {inspectorOpen && selectedHeading && isEditableHeading(selectedHeading) && (
           <Inspector
             key={selectedHeading.id}
             heading={selectedHeading}
@@ -2777,7 +3115,16 @@ function sharedStatusLabel(status: NonNullable<CanvasProps["sharedStatus"]>): st
 
 function BloomMDCanvas(props: CanvasProps) {
   if (props.headings.length === 0) {
-    return <div className="bloommd-empty-state"><Network size={32} /><h3>No Markdown headings found</h3><p>Add a heading to the note and the mind map will update automatically.</p></div>;
+    // filePath is empty while the view shows neither a note nor a folder.
+    const noNote = props.filePath === "";
+    return (
+      <div className="bloommd-empty-state">
+        <Network size={32} />
+        <h3>{noNote ? "No note is open in this map" : "No Markdown headings found"}</h3>
+        <p>{noNote ? "Open a Markdown note and run ‘BloomMD: Visualize current note’, or go back to Markdown." : "Add a heading to the note and the mind map will update automatically."}</p>
+        <button type="button" onClick={props.actions.openMarkdown}>Back to Markdown</button>
+      </div>
+    );
   }
   return <ReactFlowProvider><CanvasInner {...props} /></ReactFlowProvider>;
 }
@@ -2785,6 +3132,12 @@ function BloomMDCanvas(props: CanvasProps) {
 interface CanvasErrorBoundaryProps {
   children: ReactNode;
   onBack: () => void;
+  /** A failure from outside React (opening or loading the note); shown like a render error. */
+  failure?: string | null;
+  /** Retries after `failure`; render errors retry by rendering the children again. */
+  onRetry?: () => void;
+  /** A render error is cleared when this changes, e.g. when another note is shown. */
+  resetKey?: string;
 }
 
 interface CanvasErrorBoundaryState {
@@ -2802,22 +3155,56 @@ class CanvasErrorBoundary extends Component<CanvasErrorBoundaryProps, CanvasErro
     console.error("BloomMD canvas failed to render", error);
   }
 
+  componentDidUpdate(previous: CanvasErrorBoundaryProps) {
+    if (this.state.error && previous.resetKey !== this.props.resetKey) this.setState({ error: null });
+  }
+
   render() {
-    if (!this.state.error) return this.props.children;
+    const { error } = this.state;
+    const { failure, onRetry } = this.props;
+    if (!error && failure == null) return this.props.children;
+    const message = error ? error.message || "Unknown rendering error" : failure || "Unknown error";
+    const retry = error ? () => this.setState({ error: null }) : onRetry;
 
     return (
       <div className="bloommd-render-error" role="alert">
         <AlertTriangle size={32} />
-        <h3>BloomMD could not render this map</h3>
-        <p>The note is still safe in Markdown. Reload the map or return to the note.</p>
-        <code>{this.state.error.message || "Unknown rendering error"}</code>
+        <h3>{error ? "BloomMD could not render this map" : "BloomMD could not open this map"}</h3>
+        <p>The note is still safe in Markdown. {retry ? "Try again or return to the note." : "Return to the note."}</p>
+        <code>{message}</code>
         <div className="bloommd-render-error-actions">
-          <button type="button" onClick={() => this.setState({ error: null })}>Try again</button>
+          {retry && <button type="button" onClick={retry}>Try again</button>}
           <button type="button" onClick={this.props.onBack}>Back to Markdown</button>
         </div>
       </div>
     );
   }
+}
+
+/**
+ * Last resort for when the React mount itself cannot be created, so no boundary can render. Plain DOM
+ * with the same wording and classes as the error state; never leaves the view without a way back.
+ */
+export function renderMountFailure(container: HTMLElement, message: string, onBack: () => void): void {
+  container.replaceChildren();
+  const panel = document.createElement("div");
+  panel.className = "bloommd-render-error";
+  panel.setAttribute("role", "alert");
+  const title = document.createElement("h3");
+  title.textContent = "BloomMD could not open this map";
+  const hint = document.createElement("p");
+  hint.textContent = "The note is still safe in Markdown. Return to the note.";
+  const detail = document.createElement("code");
+  detail.textContent = message || "Unknown error";
+  const actions = document.createElement("div");
+  actions.className = "bloommd-render-error-actions";
+  const back = document.createElement("button");
+  back.type = "button";
+  back.textContent = "Back to Markdown";
+  back.addEventListener("click", onBack);
+  actions.appendChild(back);
+  panel.append(title, hint, detail, actions);
+  container.appendChild(panel);
 }
 
 export function createCanvasMount(container: HTMLElement): CanvasMount {
@@ -2830,7 +3217,7 @@ export function createCanvasMount(container: HTMLElement): CanvasMount {
   return {
     host,
     render: (props) => root.render(
-      <CanvasErrorBoundary onBack={props.actions.openMarkdown}>
+      <CanvasErrorBoundary onBack={props.actions.openMarkdown} failure={props.loadError} onRetry={props.actions.reloadNote} resetKey={props.filePath}>
         <BloomMDCanvas {...props} />
       </CanvasErrorBoundary>,
     ),
